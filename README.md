@@ -17,7 +17,7 @@ The goal of the project is to allow students to view available menu items, place
 ## Tech Stack
 
 ### Frontend
-- TBD
+- React (Vite)
 
 ### Backend
 - FastAPI
@@ -29,11 +29,35 @@ The goal of the project is to allow students to view available menu items, place
 
 ## Project Structure
 
-The project will be divided into a frontend and backend.
+```text
+frontend/       React app (Vite)
+  src/          App entry point and components
+backend/        FastAPI app
+  app/          Python application package
+docs/diagrams/  UML diagrams
+```
 
-The frontend will handle the user interface and communicate with the backend through API requests.
+## Run locally
 
-The backend will handle application logic, authentication, order processing, and communication with the database.
+Frontend (Node.js 22.12+):
+
+```sh
+cd frontend
+npm install
+npm run dev
+```
+
+Backend (Python 3.10+), in a separate terminal:
+
+```sh
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+The frontend starts blank. FastAPI's default API docs are at http://127.0.0.1:8000/docs.
 
 ## Team
 
