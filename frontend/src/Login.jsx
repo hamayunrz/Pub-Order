@@ -4,6 +4,9 @@ import { getSupabase } from './supabase.js';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function signInMessage(error) {
+  if (error.code === 'email_not_confirmed') {
+    return 'You need to confirm your email before you can sign in.';
+  }
   if (error.code === 'invalid_credentials') {
     return 'Email or password is incorrect.';
   }
