@@ -1,8 +1,26 @@
 import { useState } from 'react';
+import { getSupabase } from './supabase.js';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function validate({ email, password }) {
+function signInMessage(error) {
+  if (error.code === 'invalid_credentials') {
+    return 'Email or password is incorrect.';
+  }
+  return 'Could not sign in. Try again.';
+}
+
+function signUpMessage(error) {
+  if (error.code === 'user_already_exists' || error.code === 'email_exists') {
+    return 'An account with this email already exists.';
+  }
+  if (error.code === 'weak_password') {
+    return 'Use at least 6 characters.';
+  }
+  return 'Could not create the account. Try again.';
+}
+
+function validate({ email, password, confirmPassword, mode }) {
   const errors = {};
   const trimmedEmail = email.trim();
 
@@ -16,21 +34,110 @@ function validate({ email, password }) {
     errors.password = 'Enter your password.';
   }
 
+  if (mode === 'sign-up') {
+    if (!confirmPassword) {
+      errors.confirmPassword = 'Confirm your password.';
+    } else if (password && confirmPassword !== password) {
+      errors.confirmPassword = 'Passwords do not match.';
+    }
+  }
+
   return errors;
 }
 
+async function confirmSession(session) {
+  const response = await fetch('/api/me', {
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(body.detail || 'The server could not confirm this sign-in.');
+  }
+  const profile = await response.json();
+  return profile.email;
+}
+
 export default function Login() {
+  const [mode, setMode] = useState('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
-  const [submitted, setSubmitted] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [notice, setNotice] = useState('');
 
-  function handleSubmit(event) {
+  const isSignUp = mode === 'sign-up';
+
+  function clearFeedback() {
+    setFormError('');
+    setNotice('');
+  }
+
+  function switchMode(nextMode) {
+    setMode(nextMode);
+    setErrors({});
+    setConfirmPassword('');
+    clearFeedback();
+  }
+
+  async function handleSubmit(event) {
     event.preventDefault();
-    const nextErrors = validate({ email, password });
+    const nextErrors = validate({ email, password, confirmPassword, mode });
     setErrors(nextErrors);
-    setSubmitted(Object.keys(nextErrors).length === 0);
+    clearFeedback();
+    if (Object.keys(nextErrors).length > 0) {
+      return;
+    }
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      setFormError('Sign-in is not configured yet.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      if (isSignUp) {
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+        });
+        if (error) {
+          setFormError(signUpMessage(error));
+          return;
+        }
+        if (!data.session) {
+          setPassword('');
+          setConfirmPassword('');
+          setMode('sign-in');
+          setNotice('Account created. Sign in to continue.');
+          return;
+        }
+        setNotice(`Signed in as ${await confirmSession(data.session)}.`);
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error || !data.session) {
+        setFormError(error ? signInMessage(error) : 'Could not sign in. Try again.');
+        return;
+      }
+
+      setNotice(`Signed in as ${await confirmSession(data.session)}.`);
+    } catch (error) {
+      setFormError(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Could not reach the account service.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -43,8 +150,30 @@ export default function Login() {
 
       <section className="login-panel">
         <form className="login-form" onSubmit={handleSubmit} noValidate>
-          <h2>Sign in</h2>
-          <p className="login-intro">Use your Vanderbilt email to start an order.</p>
+          <div className="login-tabs" role="tablist" aria-label="Account">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={mode === 'sign-in'}
+              onClick={() => switchMode('sign-in')}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={isSignUp}
+              onClick={() => switchMode('sign-up')}
+            >
+              Sign up
+            </button>
+          </div>
+          <h2 className="visually-hidden">{isSignUp ? 'Sign up' : 'Sign in'}</h2>
+          <p className="login-intro">
+            {isSignUp
+              ? 'Create an account with your Vanderbilt email.'
+              : 'Use your Vanderbilt email to start an order.'}
+          </p>
 
           <div className="field">
             <label htmlFor="email">Email</label>
@@ -59,7 +188,7 @@ export default function Login() {
               aria-describedby={errors.email ? 'email-error' : undefined}
               onChange={(event) => {
                 setEmail(event.target.value);
-                setSubmitted(false);
+                clearFeedback();
               }}
             />
             {errors.email ? (
@@ -76,13 +205,13 @@ export default function Login() {
                 id="password"
                 name="password"
                 type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
+                autoComplete={isSignUp ? 'new-password' : 'current-password'}
                 value={password}
                 aria-invalid={errors.password ? 'true' : 'false'}
                 aria-describedby={errors.password ? 'password-error' : undefined}
                 onChange={(event) => {
                   setPassword(event.target.value);
-                  setSubmitted(false);
+                  clearFeedback();
                 }}
               />
               <button
@@ -101,13 +230,57 @@ export default function Login() {
             ) : null}
           </div>
 
-          <button type="submit" className="login-submit">
-            Sign in
+          {isSignUp ? (
+            <div className="field">
+              <label htmlFor="confirm-password">Confirm password</label>
+              <div className="password-row">
+                <input
+                  id="confirm-password"
+                  name="confirm-password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  aria-invalid={errors.confirmPassword ? 'true' : 'false'}
+                  aria-describedby={errors.confirmPassword ? 'confirm-password-error' : undefined}
+                  onChange={(event) => {
+                    setConfirmPassword(event.target.value);
+                    clearFeedback();
+                  }}
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  aria-pressed={showPassword}
+                  onClick={() => setShowPassword((visible) => !visible)}
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              {errors.confirmPassword ? (
+                <p id="confirm-password-error" className="field-error" role="alert">
+                  {errors.confirmPassword}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <button type="submit" className="login-submit" disabled={submitting}>
+            {submitting ? (isSignUp ? 'Creating account…' : 'Signing in…') : isSignUp ? 'Create account' : 'Sign in'}
           </button>
 
-          {submitted ? (
+          <button type="button" className="login-sso">
+            Sign in with SSO
+          </button>
+
+          {formError ? (
+            <p className="login-error" role="alert">
+              {formError}
+            </p>
+          ) : null}
+
+          {notice ? (
             <p className="login-status" role="status">
-              Ready to sign in as {email.trim()}. Account checks will connect here next.
+              {notice}
             </p>
           ) : null}
         </form>
