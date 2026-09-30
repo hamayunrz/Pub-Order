@@ -129,3 +129,153 @@ describe('Login form controls', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 });
+
+function meResponse(ok, body) {
+  return {
+    ok,
+    json: body === undefined ? vi.fn().mockRejectedValue(new SyntaxError('no body')) : vi.fn().mockResolvedValue(body),
+  };
+}
+
+function session(token = 'access-token') {
+  return { data: { session: { access_token: token } }, error: null };
+}
+
+async function fillSignUp(user, email = 'student@vanderbilt.edu', password = 'secret123') {
+  await user.click(screen.getByRole('tab', { name: 'Sign up' }));
+  await fillSignIn(user, email, password);
+  await user.type(screen.getByLabelText('Confirm password'), password);
+}
+
+describe('Signing in', () => {
+  it('signs in and confirms the session with the backend', async () => {
+    auth.signInWithPassword.mockResolvedValue(session('abc.def.ghi'));
+    fetch.mockResolvedValue(meResponse(true, { id: 'user-123', email: 'student@vanderbilt.edu' }));
+    const user = setup();
+
+    await fillSignIn(user, '  student@vanderbilt.edu  ');
+    await user.click(submitButton());
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Signed in as student@vanderbilt.edu.');
+    expect(auth.signInWithPassword).toHaveBeenCalledWith({
+      email: 'student@vanderbilt.edu',
+      password: 'secret123',
+    });
+    expect(fetch).toHaveBeenCalledWith('/api/me', {
+      headers: { Authorization: 'Bearer abc.def.ghi' },
+    });
+  });
+
+  it.each([
+    ['invalid_credentials', 'Email or password is incorrect.'],
+    ['email_not_confirmed', 'You need to confirm your email before you can sign in.'],
+    ['something_else', 'Could not sign in. Try again.'],
+  ])('shows a message for the %s error', async (code, message) => {
+    auth.signInWithPassword.mockResolvedValue({ data: { session: null }, error: { code } });
+    const user = setup();
+
+    await fillSignIn(user);
+    await user.click(submitButton());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('handles a response with no session and no error', async () => {
+    auth.signInWithPassword.mockResolvedValue({ data: { session: null }, error: null });
+    const user = setup();
+
+    await fillSignIn(user);
+    await user.click(submitButton());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not sign in. Try again.');
+  });
+
+  it('shows the backend error when the session cannot be confirmed', async () => {
+    auth.signInWithPassword.mockResolvedValue(session());
+    fetch.mockResolvedValue(meResponse(false, { detail: 'Sign-in is not configured.' }));
+    const user = setup();
+
+    await fillSignIn(user);
+    await user.click(submitButton());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sign-in is not configured.');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('falls back to a generic message when the backend returns no JSON', async () => {
+    auth.signInWithPassword.mockResolvedValue(session());
+    fetch.mockResolvedValue(meResponse(false));
+    const user = setup();
+
+    await fillSignIn(user);
+    await user.click(submitButton());
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The server could not confirm this sign-in.');
+  });
+
+  it('disables the submit button while signing in', async () => {
+    let finish;
+    auth.signInWithPassword.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+    const user = setup();
+
+    await fillSignIn(user);
+    await user.click(submitButton());
+
+    expect(screen.getByRole('button', { name: 'Signing in…' })).toBeDisabled();
+
+    finish({ data: { session: null }, error: { code: 'invalid_credentials' } });
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(submitButton()).toBeEnabled();
+  });
+});
+
+describe('Signing up', () => {
+  it.each([
+    ['user_already_exists', 'An account with this email already exists.'],
+    ['email_exists', 'An account with this email already exists.'],
+    ['weak_password', 'Use at least 6 characters.'],
+    ['something_else', 'Could not create the account. Try again.'],
+  ])('shows a message for the %s error', async (code, message) => {
+    auth.signUp.mockResolvedValue({ data: {}, error: { code } });
+    const user = setup();
+
+    await fillSignUp(user);
+    await user.click(submitButton('Create account'));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(auth.signUp).toHaveBeenCalledWith({
+      email: 'student@vanderbilt.edu',
+      password: 'secret123',
+    });
+  });
+
+  it('sends the user to sign in when email confirmation is required', async () => {
+    auth.signUp.mockResolvedValue({ data: { session: null }, error: null });
+    const user = setup();
+
+    await fillSignUp(user);
+    await user.click(submitButton('Create account'));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Account created. Sign in to continue.');
+    expect(screen.getByRole('tab', { name: 'Sign in' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByLabelText('Password')).toHaveValue('');
+    expect(screen.getByLabelText('Email')).toHaveValue('student@vanderbilt.edu');
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('signs in immediately when Supabase returns a session', async () => {
+    auth.signUp.mockResolvedValue(session('new-user-token'));
+    fetch.mockResolvedValue(meResponse(true, { id: 'user-456', email: 'student@vanderbilt.edu' }));
+    const user = setup();
+
+    await fillSignUp(user);
+    await user.click(submitButton('Create account'));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Signed in as student@vanderbilt.edu.');
+    expect(fetch).toHaveBeenCalledWith('/api/me', {
+      headers: { Authorization: 'Bearer new-user-token' },
+    });
+  });
+});
