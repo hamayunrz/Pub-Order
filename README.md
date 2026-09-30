@@ -77,7 +77,7 @@ npm test            # run once
 npm run test:watch  # rerun on file changes
 ```
 
-GitHub Actions runs both suites on every pull request and push to `main`.
+GitHub Actions runs both suites on every pull request and push to `main`. See [docs/testing.md](docs/testing.md) for a list of every test and what it checks.
 
 For trying the API by hand, use the Swagger UI at `/docs` on the running backend.
 
