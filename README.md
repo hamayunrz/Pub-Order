@@ -59,6 +59,28 @@ uvicorn app.main:app --reload
 
 The frontend starts blank. FastAPI's default API docs are at http://127.0.0.1:8000/docs.
 
+## Running tests
+
+Tests replace Supabase with a fake, so they don't need a `.env` file or a network connection.
+
+Backend (pytest), from `backend/` with the virtual environment active:
+
+```sh
+pip install -r requirements-dev.txt
+pytest
+```
+
+Frontend (Vitest and React Testing Library), from `frontend/`:
+
+```sh
+npm test            # run once
+npm run test:watch  # rerun on file changes
+```
+
+GitHub Actions runs both suites on every pull request and push to `main`.
+
+For trying the API by hand, use the Swagger UI at `/docs` on the running backend.
+
 ## Team
 
 This project is being developed as a group project at Vanderbilt University.
