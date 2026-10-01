@@ -39,25 +39,31 @@ docs/diagrams/  UML diagrams
 
 ## Run locally
 
+First, copy `.env.example` to `.env` in the repo root and fill in the Supabase URL and anon key.
+
 Frontend (Node.js 22.12+):
 
 ```sh
 cd frontend
 npm install
-npm run dev
+npm run dev        # http://localhost:5173
 ```
 
-Backend (Python 3.10+), in a separate terminal:
+Backend (Python 3.10+), in a separate terminal. It must run on port 8001, because the frontend forwards `/api` requests there.
 
 ```sh
 cd backend
-python3 -m venv .venv
-source .venv/bin/activate
+python -m venv .venv            # macOS/Linux: python3 -m venv .venv
+.venv\Scripts\Activate.ps1      # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8001
 ```
 
-The frontend starts blank. FastAPI's default API docs are at http://127.0.0.1:8000/docs.
+You only need to create the venv and run `pip install` the first time. After that, activate the venv and start `uvicorn`.
+
+If Windows says running scripts is disabled when you activate the venv, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once.
+
+The frontend opens on the login page. The backend's API docs (Swagger) are at http://127.0.0.1:8001/docs.
 
 ## Running tests
 
