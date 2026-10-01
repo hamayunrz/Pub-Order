@@ -31,13 +31,16 @@
 .menu-results { color: var(--muted); font-size: 12px; margin: 22px 0 14px; }
 .menu-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .menu-item { display: flex; flex-direction: column; padding: 22px; background: var(--card); border: 1px solid var(--line); border-radius: 16px; }
+.menu-item-image { aspect-ratio: 4 / 3; border-radius: 10px; overflow: hidden; background: #f2ecdf; margin-bottom: 18px; }
+.menu-item-image img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .menu-item-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 .menu-item-category { text-transform: uppercase; letter-spacing: .1em; font-size: 9px; color: var(--gold-deep); font-weight: 700; }
 .menu-item-label { font-size: 10px; color: var(--muted); padding: 3px 7px; border-radius: 6px; background: #f2ecdf; }
 .menu-item h2 { font-size: 20px; line-height: 1.25; margin: 20px 0 9px; font-weight: 600; }
 .menu-item > p { font-size: 13px; color: var(--muted); margin: 0 0 22px; line-height: 1.6; }
+.menu-item > p.menu-item-portion { text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
 .menu-item-bottom { margin-top: auto; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-.menu-item-bottom > strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.menu-item-swipe-type { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; color: var(--ink); padding: 5px 10px; border-radius: 6px; background: #f3e6cc; }
 .menu-add { border: 1px solid var(--line); background: #f3e6cc; color: var(--ink); padding: 9px 13px; border-radius: 30px; font-size: 12px !important; font-weight: 600 !important; }
 .menu-add:hover:not(:disabled) { background: #e9d6af; }
 .menu-add span { font-size: 10px; font-weight: 400; }
@@ -51,17 +54,18 @@
 .menu-cart-empty p { font-size: 13px; color: var(--muted); margin: 0; }
 .menu-cart-items { list-style: none; padding: 0; margin: 0; }
 .menu-cart-items li { border-bottom: 1px solid var(--line); padding: 20px 0; }
-.menu-cart-item-title { display: flex; justify-content: space-between; gap: 12px; }
+.menu-cart-item-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .menu-cart-item-title h3 { font-size: 13px; margin: 0; }
-.menu-cart-item-title strong { font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.menu-unit-price { font-size: 11px; margin: 5px 0 12px; color: var(--muted); }
+.menu-cart-item-portion { font-size: 11px; margin: 5px 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .menu-cart-controls { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .menu-quantity { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 30px; }
 .menu-quantity button { border: 0; background: transparent; color: var(--ink); width: 36px; height: 36px; border-radius: 100%; }
 .menu-quantity button:hover:not(:disabled) { background: #efe8dc; }
 .menu-quantity span { min-width: 24px; text-align: center; font-size: 13px; }
-.menu-subtotal { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-top: 24px; }
-.menu-subtotal strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+.menu-swipe-control { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.menu-swipe-control-label { font-size: 13px; font-weight: 600; }
+.menu-swipe-progress { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 24px; font-size: 12px; color: var(--muted); }
+.menu-swipe-progress strong { font-variant-numeric: tabular-nums; color: var(--ink); }
 .menu-cart-footnote, .menu-save-note { font-size: 11px; color: var(--muted); line-height: 1.6; }
 .menu-save-note { margin: 20px 0 0; padding-top: 16px; border-top: 1px solid var(--line); }
 .menu-no-results { border: 1px dashed var(--line); border-radius: 16px; padding: 40px 24px; text-align: center; }
