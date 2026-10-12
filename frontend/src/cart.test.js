@@ -1,5 +1,6 @@
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { filterMenu, getCartSummary, MAX_SWIPES, restoreCart, setQuantity, setSwipes } from './cart.js';
+import { MENU_ITEMS } from './menu-data.js';
 
 function cartWith(swipes, items) {
   return { swipes, items };
@@ -131,4 +132,72 @@ test('setQuantity boundary: MAX_SWIPES is reachable but cannot be exceeded', () 
 test('empty cart has zero counts and no line items', () => {
   const summary = getCartSummary(cartWith(1, {}));
   expect(summary).toEqual({ items: [], count: 0, counts: { Entry: 0, Side: 0, Drink: 0 }, swipes: 1 });
+});
+
+describe('setSwipes edge cases', () => {
+  test('MAX_SWIPES is reachable and one more is capped', () => {
+    const cart = cartWith(1, {});
+    expect(setSwipes(cart, MAX_SWIPES).swipes).toBe(MAX_SWIPES);
+    expect(setSwipes(cart, MAX_SWIPES + 1).swipes).toBe(MAX_SWIPES);
+  });
+
+  test('swipes can drop to exactly the busiest type but not below it', () => {
+    const cart = cartWith(3, { 'pub-burger': 2, 'sweet-tea': 1 });
+    expect(setSwipes(cart, 2).swipes).toBe(2);
+    expect(setSwipes(cart, 1)).toBe(cart);
+  });
+
+  test('negative, fractional, and NaN values leave the cart unchanged', () => {
+    const cart = cartWith(2, {});
+    for (const value of [-1, 2.5, NaN]) {
+      expect(setSwipes(cart, value)).toBe(cart);
+    }
+  });
+
+  test('does not modify the original cart', () => {
+    const original = cartWith(1, { 'pub-burger': 1 });
+    setSwipes(original, 4);
+    expect(original).toEqual(cartWith(1, { 'pub-burger': 1 }));
+  });
+});
+
+describe('restoreCart edge cases', () => {
+  test('caps saved swipes at MAX_SWIPES and re-checks items against the cap', () => {
+    const raw = JSON.stringify({ swipes: MAX_SWIPES + 5, items: { 'pub-burger': MAX_SWIPES, 'straight-cut-fries': MAX_SWIPES + 2 } });
+    expect(restoreCart(raw)).toEqual({ swipes: MAX_SWIPES, items: { 'pub-burger': MAX_SWIPES } });
+  });
+
+  test('invalid saved swipe counts return a fresh cart', () => {
+    for (const swipes of [0, -1, 1.5, '2', null]) {
+      expect(restoreCart(JSON.stringify({ swipes, items: { 'pub-burger': 1 } }))).toEqual({ swipes: 1, items: {} });
+    }
+  });
+
+  test('missing or array items keep the swipes but empty the cart', () => {
+    expect(restoreCart(JSON.stringify({ swipes: 3 }))).toEqual({ swipes: 3, items: {} });
+    expect(restoreCart(JSON.stringify({ swipes: 3, items: ['pub-burger'] }))).toEqual({ swipes: 3, items: {} });
+  });
+});
+
+describe('summary and search details', () => {
+  test('cart summary lists items in menu order, not the order they were added', () => {
+    let cart = cartWith(1, {});
+    for (const id of ['sweet-tea', 'straight-cut-fries', 'pub-burger']) {
+      cart = setQuantity(cart, id, 1);
+    }
+    const menuOrder = MENU_ITEMS.map((item) => item.id).filter((id) => id in cart.items);
+    expect(getCartSummary(cart).items.map((item) => item.id)).toEqual(menuOrder);
+  });
+
+  test('search matches dietary labels', () => {
+    const vegan = filterMenu('vegan', 'All');
+    expect(vegan.length).toBe(MENU_ITEMS.filter((item) => item.label === 'Vegan').length);
+    expect(vegan.every((item) => item.label === 'Vegan')).toBe(true);
+  });
+
+  test('an empty search with a category returns exactly that category', () => {
+    const sides = filterMenu('', 'Grill Side');
+    expect(sides.length).toBe(MENU_ITEMS.filter((item) => item.category === 'Grill Side').length);
+    expect(sides.every((item) => item.category === 'Grill Side')).toBe(true);
+  });
 });
