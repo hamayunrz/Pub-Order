@@ -67,13 +67,15 @@ The frontend opens on the login page. The backend's API docs (Swagger) are at ht
 
 ## Running tests
 
-Tests replace Supabase with a fake, so they don't need a `.env` file or a network connection.
+Most tests replace Supabase with a fake, so they don't need a `.env` file or a network connection.
 
 Backend (pytest), from `backend/` with the virtual environment active:
 
 ```sh
 pip install -r requirements-dev.txt
-pytest
+pytest                                    # everything; integration tests skip without credentials
+pytest -m "not integration"               # unit tests only
+pytest --cov=app --cov-branch --cov-report=term-missing
 ```
 
 Frontend (Vitest and React Testing Library), from `frontend/`:
@@ -81,9 +83,25 @@ Frontend (Vitest and React Testing Library), from `frontend/`:
 ```sh
 npm test            # run once
 npm run test:watch  # rerun on file changes
+npm run coverage    # with branch coverage (fails below 70%)
 ```
 
-GitHub Actions runs both suites on every pull request and push to `main`. See [docs/testing.md](docs/testing.md) for a list of every test and what it checks.
+End-to-end (Playwright), from `frontend/`. The first time, download the browser with `npx playwright install chromium`.
+
+```sh
+npm run test:e2e    # starts the dev server itself
+```
+
+**Real Supabase tests.** The backend integration tests and the sign-in E2E journey run only when a confirmed Supabase test user is set in the root `.env`:
+
+```
+PUB_ORDER_TEST_EMAIL=...
+PUB_ORDER_TEST_PASSWORD=...
+```
+
+These names deliberately don't start with `SUPABASE_`, because the frontend sends every `SUPABASE_*` value to the browser.
+
+GitHub Actions runs the backend, frontend and E2E tests on every pull request and push to `main`. To run the real Supabase tests there, add `SUPABASE_URL`, `SUPABASE_KEY`, `PUB_ORDER_TEST_EMAIL` and `PUB_ORDER_TEST_PASSWORD` as repository secrets. See [docs/testing.md](docs/testing.md) for a list of every test and what it checks.
 
 For trying the API by hand, use the Swagger UI at `/docs` on the running backend.
 

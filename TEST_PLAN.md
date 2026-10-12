@@ -64,16 +64,14 @@ Likelihood (L) and impact (I) are scored 1–3 each; priority = L × I.
 ## How to run
 
 ```sh
-# Backend (from backend/, venv active; coverage needs pytest-cov)
+# Backend (from backend/, venv active)
 pytest -m "not integration"
-pytest -m integration          # once the integration marker and test Supabase project exist
+pytest -m integration          # needs PUB_ORDER_TEST_EMAIL / PUB_ORDER_TEST_PASSWORD in .env
 pytest --cov=app --cov-branch --cov-report=term-missing
 
-# Frontend (from frontend/; coverage needs @vitest/coverage-v8)
+# Frontend (from frontend/)
 npm test
-npx vitest run --coverage
-
-# Cart rules (from frontend/, feature/menu-and-cart)
-npm run test:cart
-node --test --experimental-test-coverage tests/cart.node.mjs
+npm run coverage
+npm run test:cart              # cart rules only
+npm run test:e2e               # Playwright; first run: npx playwright install chromium
 ```
