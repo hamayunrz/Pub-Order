@@ -41,6 +41,8 @@ docs/diagrams/  UML diagrams
 
 First, copy `.env.example` to `.env` in the repo root and fill in the Supabase URL and anon key.
 
+Before browsing the database menu, apply `supabase/migrations/202610120001_menu_items.sql` once in the intended Supabase project. See [Hamayun’s US1/US2 walkthrough](docs/hamayun-us1-us2.md) for setup, the meal-swipe rules, API contract, tests, and the US3 handoff.
+
 Frontend (Node.js 22.12+):
 
 ```sh
@@ -81,9 +83,11 @@ Frontend (Vitest and React Testing Library), from `frontend/`:
 ```sh
 npm test            # run once
 npm run test:watch  # rerun on file changes
+npm run test:cart   # standalone cart logic tests
+npm run build       # production compilation
 ```
 
-GitHub Actions runs both suites on every pull request and push to `main`. See [docs/testing.md](docs/testing.md) for a list of every test and what it checks.
+GitHub Actions also verifies the menu migration and read-only student permissions in an isolated PostgreSQL database. The menu/cart workflow runs cart tests and the frontend build. GitHub Actions runs both suites on every pull request and push to `main`. See [docs/testing.md](docs/testing.md) for a list of every test and what it checks.
 
 For trying the API by hand, use the Swagger UI at `/docs` on the running backend.
 

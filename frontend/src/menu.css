@@ -95,3 +95,12 @@
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
+
+.checkout-review { max-width: 720px; margin: auto; padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+.checkout-review h2 { margin-top: 0; }
+.checkout-review [role="alert"] { color: #8b2922; line-height: 1.6; }
+.checkout-review [role="status"] { padding: 16px; background: #edf3e9; border-radius: 8px; }
+.checkout-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-top: 24px; }
+.checkout-button { width: 100%; margin-top: 20px; }
+.checkout-review .menu-subtotal { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-top: 24px; }
+.checkout-review .menu-subtotal strong { font-size: 24px; text-align: right; }

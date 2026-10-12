@@ -2,8 +2,10 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import get_current_user
+from app.menu import router as menu_router
 
 app = FastAPI()
+app.include_router(menu_router)
 
 app.add_middleware(
     CORSMiddleware,

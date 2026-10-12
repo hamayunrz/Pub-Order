@@ -1,3 +1,5 @@
+> Historical menu/cart guide. US1/US2 now load the menu from Supabase and add checkout review. Use [the current walkthrough](hamayun-us1-us2.md) for setup and demonstrations.
+
 # Menu and cart presentation
 
 ## Contribution
