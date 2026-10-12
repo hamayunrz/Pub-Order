@@ -24,9 +24,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function setup() {
+function setup(props = {}) {
   const user = userEvent.setup();
-  render(<Login />);
+  render(<Login {...props} />);
   return user;
 }
 
@@ -277,5 +277,83 @@ describe('Signing up', () => {
     expect(fetch).toHaveBeenCalledWith('/api/me', {
       headers: { Authorization: 'Bearer new-user-token' },
     });
+  });
+});
+
+describe('Callbacks to the app', () => {
+  it('reports the signed-in email after signing in', async () => {
+    const onSignedIn = vi.fn();
+    auth.signInWithPassword.mockResolvedValue(session());
+    fetch.mockResolvedValue(meResponse(true, { id: 'user-123', email: 'student@vanderbilt.edu' }));
+    const user = setup({ onSignedIn });
+
+    await fillSignIn(user);
+    await user.click(submitButton());
+
+    await screen.findByRole('status');
+    expect(onSignedIn).toHaveBeenCalledExactlyOnceWith('student@vanderbilt.edu');
+  });
+
+  it('reports the signed-in email after a sign-up that returns a session', async () => {
+    const onSignedIn = vi.fn();
+    auth.signUp.mockResolvedValue(session());
+    fetch.mockResolvedValue(meResponse(true, { id: 'user-456', email: 'student@vanderbilt.edu' }));
+    const user = setup({ onSignedIn });
+
+    await fillSignUp(user);
+    await user.click(submitButton('Create account'));
+
+    await screen.findByRole('status');
+    expect(onSignedIn).toHaveBeenCalledExactlyOnceWith('student@vanderbilt.edu');
+  });
+
+  it('does not report a sign-in that Supabase rejects', async () => {
+    const onSignedIn = vi.fn();
+    auth.signInWithPassword.mockResolvedValue({ data: { session: null }, error: { code: 'invalid_credentials' } });
+    const user = setup({ onSignedIn });
+
+    await fillSignIn(user);
+    await user.click(submitButton());
+
+    await screen.findByRole('alert');
+    expect(onSignedIn).not.toHaveBeenCalled();
+  });
+
+  it('does not report a sign-in the backend cannot confirm', async () => {
+    const onSignedIn = vi.fn();
+    auth.signInWithPassword.mockResolvedValue(session());
+    fetch.mockResolvedValue(meResponse(false, { detail: 'Sign in required.' }));
+    const user = setup({ onSignedIn });
+
+    await fillSignIn(user);
+    await user.click(submitButton());
+
+    await screen.findByRole('alert');
+    expect(onSignedIn).not.toHaveBeenCalled();
+  });
+
+  it('shows Browse sample menu only when the app provides it', async () => {
+    const onBrowse = vi.fn();
+    const user = setup({ onBrowse });
+
+    await user.click(screen.getByRole('button', { name: 'Browse sample menu' }));
+
+    expect(onBrowse).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides Browse sample menu without a handler', () => {
+    setup();
+
+    expect(screen.queryByRole('button', { name: 'Browse sample menu' })).not.toBeInTheDocument();
+  });
+
+  it('disables Browse sample menu while signing in', async () => {
+    auth.signInWithPassword.mockReturnValue(new Promise(() => {}));
+    const user = setup({ onBrowse: vi.fn() });
+
+    await fillSignIn(user);
+    await user.click(submitButton());
+
+    expect(screen.getByRole('button', { name: 'Browse sample menu' })).toBeDisabled();
   });
 });
