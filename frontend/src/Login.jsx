@@ -60,7 +60,7 @@ async function confirmSession(session) {
   return profile.email;
 }
 
-export default function Login() {
+export default function Login({ onBrowse, onSignedIn } = {}) {
   const [mode, setMode] = useState('sign-in');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -118,7 +118,9 @@ export default function Login() {
           setNotice('Account created. Sign in to continue.');
           return;
         }
-        setNotice(`Signed in as ${await confirmSession(data.session)}.`);
+        const signedInEmail = await confirmSession(data.session);
+        setNotice(`Signed in as ${signedInEmail}.`);
+        onSignedIn?.(signedInEmail);
         return;
       }
 
@@ -131,7 +133,9 @@ export default function Login() {
         return;
       }
 
-      setNotice(`Signed in as ${await confirmSession(data.session)}.`);
+      const signedInEmail = await confirmSession(data.session);
+      setNotice(`Signed in as ${signedInEmail}.`);
+      onSignedIn?.(signedInEmail);
     } catch (error) {
       setFormError(
         error instanceof Error && error.message
@@ -274,6 +278,12 @@ export default function Login() {
           <button type="button" className="login-sso">
             Sign in with SSO
           </button>
+
+          {onBrowse ? (
+            <button type="button" className="login-sso" onClick={onBrowse} disabled={submitting}>
+              Browse sample menu
+            </button>
+          ) : null}
 
           {formError ? (
             <p className="login-error" role="alert">
