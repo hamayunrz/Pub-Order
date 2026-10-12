@@ -32,3 +32,8 @@ build/
 
 # Logs
 *.log
+
+# Test coverage
+coverage/
+.coverage
+htmlcov/
