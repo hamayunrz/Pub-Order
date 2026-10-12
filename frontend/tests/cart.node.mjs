@@ -91,6 +91,44 @@ test('search combines with category and ignores case and surrounding spaces', ()
   assert.equal(filterMenu('does not exist', 'All').length, 0);
 });
 
+// Boundary-value tests for setQuantity (ICA 10, Worksheet 3).
+// Rule: a quantity is kept between 0 and the swipes left for that item's type.
+
+test('setQuantity boundary: zero and negative quantities remove the item, one keeps it', () => {
+  const cart = cartWith(2, { 'pub-burger': 1 });
+  assert.deepEqual(setQuantity(cart, 'pub-burger', -1).items, {});
+  assert.deepEqual(setQuantity(cart, 'pub-burger', 0).items, {});
+  assert.deepEqual(setQuantity(cart, 'pub-burger', 1).items, { 'pub-burger': 1 });
+});
+
+test('setQuantity boundary: quantities just below, at, and just above the swipe count', () => {
+  const cart = cartWith(3, {});
+  assert.equal(setQuantity(cart, 'pub-burger', 2).items['pub-burger'], 2);
+  assert.equal(setQuantity(cart, 'pub-burger', 3).items['pub-burger'], 3);
+  assert.equal(setQuantity(cart, 'pub-burger', 4).items['pub-burger'], 3);
+});
+
+test('setQuantity boundary: other items of the same type shrink the allowance', () => {
+  const cart = cartWith(3, { 'pub-burger': 2 });
+  assert.equal(setQuantity(cart, 'chicken-tenders', 1).items['chicken-tenders'], 1);
+  assert.equal(setQuantity(cart, 'chicken-tenders', 2).items['chicken-tenders'], 1);
+
+  const full = cartWith(3, { 'pub-burger': 3 });
+  assert.deepEqual(setQuantity(full, 'chicken-tenders', 1).items, { 'pub-burger': 3 });
+});
+
+test('setQuantity boundary: an item does not count against its own allowance', () => {
+  const cart = cartWith(2, { 'pub-burger': 2 });
+  assert.equal(setQuantity(cart, 'pub-burger', 2).items['pub-burger'], 2);
+  assert.equal(setQuantity(cart, 'pub-burger', 3).items['pub-burger'], 2);
+});
+
+test('setQuantity boundary: MAX_SWIPES is reachable but cannot be exceeded', () => {
+  const cart = cartWith(MAX_SWIPES, {});
+  assert.equal(setQuantity(cart, 'pub-burger', MAX_SWIPES).items['pub-burger'], MAX_SWIPES);
+  assert.equal(setQuantity(cart, 'pub-burger', MAX_SWIPES + 1).items['pub-burger'], MAX_SWIPES);
+});
+
 test('empty cart has zero counts and no line items', () => {
   const summary = getCartSummary(cartWith(1, {}));
   assert.deepEqual(summary, { items: [], count: 0, counts: { Entry: 0, Side: 0, Drink: 0 }, swipes: 1 });
