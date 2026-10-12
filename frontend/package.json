@@ -10,7 +10,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:cart": "node --test tests/cart.node.mjs",
+    "test:cart": "vitest run src/cart.test.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
