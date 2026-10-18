@@ -65,13 +65,15 @@ Likelihood (L) and impact (I) are scored 1–3 each; priority = L × I.
 
 ```sh
 # Backend (from backend/, venv active)
+ruff check . && mypy
 pytest -m "not integration"
-pytest -m integration          # needs PUB_ORDER_TEST_EMAIL / PUB_ORDER_TEST_PASSWORD in .env
+pytest -m integration          # needs local Supabase (`supabase start`); see README
 pytest --cov=app --cov-branch --cov-report=term-missing
 
 # Frontend (from frontend/)
-npm test
+npm run lint
+npm run test:unit
+npm run test:integration
 npm run coverage
-npm run test:cart              # cart rules only
 npm run test:e2e               # Playwright; first run: npx playwright install chromium
 ```

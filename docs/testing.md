@@ -3,9 +3,9 @@
 This page lists every automated test in the project: where it is and what it checks. For how to run the tests, see [Running tests](../README.md#running-tests) in the README.
 
 **Totals:**
-- **Backend (pytest):** 56 tests, 3 of them integration tests
-- **Frontend (Vitest + React Testing Library):** 123 tests
-- **E2E (Playwright):** 7 tests
+- **Backend (pytest):** 66 tests: 56 unit, 10 integration
+- **Frontend (Vitest + React Testing Library):** 123 tests: 121 unit and component, 2 integration
+- **E2E (Playwright):** 8 tests
 - **Database (SQL):** one migration check script
 
 Tests marked "×N" run once per input listed.
@@ -13,13 +13,25 @@ Tests marked "×N" run once per input listed.
 | Level | What it means here | Where |
 |---|---|---|
 | **Unit and component** | One function or component, with Supabase and `fetch` faked | `backend/tests/`, `frontend/src/*.test.js(x)` |
-| **Integration** | Several real pieces together. Some fake only the outside services; others call a **real Supabase project** | `frontend/src/signin-flow.integration.test.jsx`, the contract tests, `backend/tests/integration/` |
-| **Database** | The menu migration applied to a throwaway PostgreSQL database, checking its data and permissions | `supabase/tests/menu_items.sql` |
-| **E2E** | The real app in a real browser (Chromium), started with the Vite dev server. Menu journeys answer `/api/menu` with the seed menu; the sign-in journey uses the real backend | `frontend/e2e/` |
+| **Integration** | Real pieces working together. Backend integration tests go through the API, real auth and a **real database** (a throwaway local Supabase); frontend integration tests run the real components together with only the outside services faked | `backend/tests/integration/`, `frontend/src/*.integration.test.jsx` |
+| **Database** | The menu migration's data and permissions, checked directly in the local test database | `supabase/tests/menu_items.sql` |
+| **E2E** | The real app in a real browser (Chromium). Most journeys answer `/api/menu` with the seed menu; the sign-in and full-stack journeys use the real backend and database | `frontend/e2e/` |
 
-**Real Supabase is only used when test credentials are set.** Most tests fake Supabase and need no `.env`, network or accounts. The backend integration tests and the sign-in E2E journey run only when `PUB_ORDER_TEST_EMAIL` and `PUB_ORDER_TEST_PASSWORD` are set; otherwise they are skipped.
+**Integration tests never touch the team's hosted Supabase.** CI starts a throwaway local Supabase with [start-local-supabase.sh](../.github/scripts/start-local-supabase.sh): Postgres, Auth and the REST API in Docker, with `supabase/migrations` applied and a test user created. Without it, the integration tests and the real-backend E2E journeys are skipped locally. In CI, a skipped one counts as a failure (`PUB_ORDER_REQUIRE_INTEGRATION=1`), so a broken setup can't pass quietly.
 
-GitHub Actions ([.github/workflows/tests.yml](../.github/workflows/tests.yml)) runs the backend, frontend, E2E and menu-schema jobs on every pull request and every push to `main`. The backend and frontend jobs fail if branch coverage drops below 70%.
+GitHub Actions ([.github/workflows/tests.yml](../.github/workflows/tests.yml)) runs on every pull request and every push to `main`. The **backend** and **frontend** jobs run install → lint → type check → unit tests → integration tests → coverage report, stopping at the first failure. Coverage below 70% of branches fails the job. **e2e** runs after both pass, and **deliver** packages a versioned build on every push to `main`.
+
+## Seam map
+
+| Seam | Tested by | Real or faked |
+|---|---|---|
+| Browser → Vite proxy → FastAPI | `vite-config.test.js` (contract), full-stack and sign-in E2E | Real in E2E |
+| Frontend → Supabase Auth (sign-in) | `sign-in.spec.js`, `full-stack.spec.js` | Real (local Supabase) |
+| FastAPI → Supabase Auth (token check) | `test_supabase_auth.py`, `test_checkout_review_rejects_guest` | Real (local Supabase) |
+| FastAPI → database (`/menu`, `/checkout/review`) | `test_local_database.py` | Real (local Supabase), no mocks |
+| Database permissions (row-level security, grants) | `test_guest_cannot_change_the_menu`, `menu_items.sql` | Real |
+| App + Login + Menu + cart + browser storage | `signin-flow.integration.test.jsx` | Real components; Supabase and `fetch` faked |
+| FastAPI → database **writes** (orders) | Not yet: order placement (US3) isn't built | — |
 
 ## Backend
 
@@ -113,15 +125,39 @@ Checks what the frontend relies on from the backend.
 | [`test_me_returns_id_as_a_string`](../backend/tests/test_contract.py#L32) | The user id is always a string. |
 | [`test_settings_come_from_the_repo_root_env`](../backend/tests/test_contract.py#L40) | The backend reads `.env` from the repo root, the same file the frontend uses. |
 
-### Integration with real Supabase: [integration/test_supabase_auth.py](../backend/tests/integration/test_supabase_auth.py)
+### Integration: API → auth → database: [integration/test_local_database.py](../backend/tests/integration/test_local_database.py)
 
-Marked `integration`. Skipped unless `PUB_ORDER_TEST_EMAIL`, `PUB_ORDER_TEST_PASSWORD`, `SUPABASE_URL` and `SUPABASE_KEY` are set. The test user must already exist and be confirmed.
+Marked `integration`. No mocks: requests go through FastAPI, `get_current_user` and `app/menu.py` into the local Supabase database. Tests that change data restore it afterwards, and only run when `SUPABASE_URL` is local.
+
+| Test | What it checks |
+|---|---|
+| [`test_menu_reads_seeded_rows_from_database`](../backend/tests/integration/test_local_database.py#L69) | `/menu` returns exactly the 22 rows stored by the migration, in their stored order and shape. |
+| [`test_menu_reflects_a_database_change`](../backend/tests/integration/test_local_database.py#L84) | After an item is marked unavailable in the database, `/menu` shows it as unavailable. |
+| [`test_checkout_review_with_real_login`](../backend/tests/integration/test_local_database.py#L92) | A real sign-in token and a full meal pass review, using names and types from the database. |
+| [`test_checkout_review_flags_item_unavailable_in_database`](../backend/tests/integration/test_local_database.py#L102) | **Failure path:** an item made unavailable in the database blocks checkout with an `unavailable` issue. |
+| [`test_checkout_review_rejects_guest`](../backend/tests/integration/test_local_database.py#L111) | **Failure path:** without a token, review is refused with 401. |
+| [`test_checkout_review_never_writes_to_the_database`](../backend/tests/integration/test_local_database.py#L117) | The menu table is identical before and after a review. |
+| [`test_guest_cannot_change_the_menu`](../backend/tests/integration/test_local_database.py#L125) | **Failure path:** the database refuses a guest's update, and the row is unchanged. |
+
+### Integration: real sign-in: [integration/test_supabase_auth.py](../backend/tests/integration/test_supabase_auth.py)
+
+Marked `integration`. Uses the test user that CI creates in the local Supabase.
 
 | Test | What it checks |
 |---|---|
 | [`test_real_token_returns_the_signed_in_user`](../backend/tests/integration/test_supabase_auth.py#L42) | Signs the test user in with Supabase, sends the real token to `/me`, and gets 200 with the same email. |
-| [`test_garbage_token_is_rejected`](../backend/tests/integration/test_supabase_auth.py#L49) | Real Supabase rejects a made-up token, so `/me` returns 401. |
-| [`test_token_with_tampered_signature_is_rejected`](../backend/tests/integration/test_supabase_auth.py#L55) | A real token with a changed signature is rejected with 401. |
+| [`test_garbage_token_is_rejected`](../backend/tests/integration/test_supabase_auth.py#L49) | **Failure path:** real Supabase rejects a made-up token, so `/me` returns 401. |
+| [`test_token_with_tampered_signature_is_rejected`](../backend/tests/integration/test_supabase_auth.py#L55) | **Failure path:** a real token with a changed signature is rejected with 401. |
+
+### Release server: [test_serve.py](../backend/tests/test_serve.py)
+
+Covers [serve.py](../backend/serve.py), which runs the release artifact as one process.
+
+| Test | What it checks |
+|---|---|
+| [`test_serves_the_built_frontend_at_the_root`](../backend/tests/test_serve.py#L21) | The built frontend is served at `/`. |
+| [`test_serves_the_api_under_api`](../backend/tests/test_serve.py#L28) | The API is reachable under `/api` (e.g. `/api/me` gives 401 without a token). |
+| [`test_missing_frontend_build_gives_a_clear_error`](../backend/tests/test_serve.py#L35) | Without a frontend build, it fails with a message saying how to fix it. |
 
 ## Frontend
 
@@ -333,11 +369,11 @@ Checks the dev-server settings the frontend needs to reach the backend. A wrong 
 
 ## Database: [supabase/tests/menu_items.sql](../supabase/tests/menu_items.sql)
 
-The `menu-schema` CI job applies [the menu migration](../supabase/migrations/202610120001_menu_items.sql) to a throwaway PostgreSQL 16 database and runs this script. It checks that the 22 seed items exist (11 counted as entrées), that invalid swipe types are refused, that row-level security is on, and that guests and students can read the menu but not change it. It runs inside a transaction, so nothing is left behind.
+The backend CI job runs this script against the local test database, after `supabase start` has applied [the menu migration](../supabase/migrations/202610120001_menu_items.sql). It checks that the 22 seed items exist (11 counted as entrées), that invalid swipe types are refused, that row-level security is on, and that guests and students can read the menu but not change it. It runs inside a transaction, so nothing is left behind.
 
 ## E2E (Playwright)
 
-Location: [frontend/e2e/](../frontend/e2e/). Run with `npm run test:e2e` from `frontend/`. Playwright starts the Vite dev server itself; with test credentials set, it also starts the backend on port 8001. Configuration is in [playwright.config.js](../frontend/playwright.config.js). Each test gets a fresh browser profile, so carts don't carry between tests. [menu-fixture.js](../frontend/e2e/menu-fixture.js) answers the browser's `/api/menu` request with the seed menu, so the menu journeys don't need the backend or database.
+Location: [frontend/e2e/](../frontend/e2e/). Run with `npm run test:e2e` from `frontend/`. Playwright starts the Vite dev server itself; with a test user set (as in CI, against the local Supabase), it also starts the backend on port 8001. Configuration is in [playwright.config.js](../frontend/playwright.config.js). Each test gets a fresh browser profile, so carts don't carry between tests. [menu-fixture.js](../frontend/e2e/menu-fixture.js) answers the browser's `/api/menu` request with the seed menu, so most journeys don't need the backend or database. The sign-in and full-stack journeys use the real ones.
 
 | Test | What it checks |
 |---|---|
@@ -347,12 +383,13 @@ Location: [frontend/e2e/](../frontend/e2e/). Run with `npm run test:e2e` from `f
 | [meal swipes limit each part of the meal and can be raised](../frontend/e2e/swipe-limits.spec.js#L4) | A second Entry is blocked → adding a swipe allows it → swipes can't drop below what's in the cart → clearing the cart frees them. |
 | [a guest reviews a full meal and is asked to sign in without losing it](../frontend/e2e/checkout.spec.js#L9) | Build a meal → Review checkout → Validate → asked to sign in → go to login and back → the review and cart are still there. |
 | [an incomplete meal cannot be validated and says what is missing](../frontend/e2e/checkout.spec.js#L29) | An Entry alone shows which parts are missing, and Validate is disabled. |
-| [a student signs in and lands on the menu](../frontend/e2e/sign-in.spec.js#L8) | A real sign-in through Supabase and the backend opens the menu with "Signed in as …". Skipped without test credentials. |
+| [a student signs in and lands on the menu](../frontend/e2e/sign-in.spec.js#L8) | A real sign-in through Supabase and the backend opens the menu with "Signed in as …". |
+| [a signed-in student builds a meal from the database menu and the server validates it](../frontend/e2e/full-stack.spec.js#L10) | The whole stack with nothing faked: sign in → the 22 menu items load from the database → build a meal → the server confirms it's valid. |
 
 ## Not covered yet
 
-- **Placing orders and the kitchen view:** not built yet. Checkout review only validates the meal; TEST_PLAN.md lists the journeys to add once ordering exists.
-- **A signed-in checkout review end to end:** needs a test user and the menu table in the test Supabase project.
+- **Writing to the database through the API:** order placement (US3) isn't built yet. When it lands, add an integration test that places an order and reads the stored row back.
+- **The kitchen view:** not built yet.
 - **The "Sign in with SSO" button,** which has no behavior yet.
 - **A network failure when calling `/api/me`.** The page currently shows the browser's raw error text (e.g. "Failed to fetch").
 

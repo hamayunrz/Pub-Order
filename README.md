@@ -1,5 +1,7 @@
 # Pub-Order
 
+[![Tests](https://github.com/hamayunrz/Pub-Order/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/hamayunrz/Pub-Order/actions/workflows/tests.yml)
+
 Pub-Order is a web application designed to make ordering food from Vanderbilt's Pub faster and more convenient for students.
 
 The goal of the project is to allow students to view available menu items, place an order, and track their pickup status without having to wait in line.
@@ -69,43 +71,45 @@ The frontend opens on the login page. The backend's API docs (Swagger) are at ht
 
 ## Running tests
 
-Most tests replace Supabase with a fake, so they don't need a `.env` file or a network connection.
+Unit tests replace Supabase with a fake, so they don't need a `.env` file or a network connection.
 
-Backend (pytest), from `backend/` with the virtual environment active:
+Backend, from `backend/` with the virtual environment active:
 
 ```sh
-pip install -r requirements-dev.txt
-pytest                                    # everything; integration tests skip without credentials
-pytest -m "not integration"               # unit tests only
+pip install -r requirements-dev.txt       # pinned versions
+ruff check .                              # lint
+mypy                                      # type check
+pytest -m "not integration"               # unit tests
+pytest -m integration                     # integration tests (need local Supabase, below)
 pytest --cov=app --cov-branch --cov-report=term-missing
 ```
 
-Frontend (Vitest and React Testing Library), from `frontend/`:
+Frontend, from `frontend/`:
 
 ```sh
-npm test            # run once
-npm run test:watch  # rerun on file changes
-npm run test:cart   # cart logic tests only
-npm run coverage    # with branch coverage (fails below 70%)
-npm run build       # production compilation
+npm run lint              # ESLint
+npm run test:unit         # unit and component tests
+npm run test:integration  # *.integration.test.jsx
+npm run coverage          # all Vitest tests with branch coverage (fails below 70%)
+npm run test:cart         # cart logic tests only
+npm run build             # production build
 ```
 
 End-to-end (Playwright), from `frontend/`. The first time, download the browser with `npx playwright install chromium`.
 
 ```sh
-npm run test:e2e    # starts the dev server itself
+npm run test:e2e    # starts the dev server itself (and the backend when a test user is set)
 ```
 
-**Real Supabase tests.** The backend integration tests and the sign-in E2E journey run only when a confirmed Supabase test user is set in the root `.env`:
+**Integration tests use a throwaway local Supabase**, never the team's hosted project. In CI, [start-local-supabase.sh](.github/scripts/start-local-supabase.sh) starts it in Docker, applies `supabase/migrations`, and creates a test user. To run these tests yourself, install Docker and the [Supabase CLI](https://supabase.com/docs/guides/local-development), run `supabase start` from the repo root, and set `SUPABASE_URL`, `SUPABASE_KEY`, `PUB_ORDER_TEST_EMAIL`, `PUB_ORDER_TEST_PASSWORD` and `PUB_ORDER_TEST_SERVICE_KEY` to the local values. Tests that change data refuse to run unless `SUPABASE_URL` is `127.0.0.1` or `localhost`. The test variables deliberately don't start with `SUPABASE_`, because the frontend sends every `SUPABASE_*` value to the browser.
 
-```
-PUB_ORDER_TEST_EMAIL=...
-PUB_ORDER_TEST_PASSWORD=...
-```
+**CI/CD.** GitHub Actions ([tests.yml](.github/workflows/tests.yml)) runs on every pull request and every push to `main`:
 
-These names deliberately don't start with `SUPABASE_`, because the frontend sends every `SUPABASE_*` value to the browser.
+- **backend** and **frontend:** install → lint → type check (backend only) → unit tests → integration tests → coverage report, stopping at the first failure. The backend job also checks the menu migration and its permissions.
+- **e2e:** browser tests against the real stack after both pass.
+- **deliver:** on every push to `main`, packages a versioned, runnable build (`pub-order-0.3.<run>-<commit>.zip`, run with `uvicorn serve:app`) as a workflow artifact. Pushing a `sprint3` tag also publishes it as a GitHub Release.
 
-GitHub Actions runs the backend, frontend and E2E tests on every pull request and push to `main`, and verifies the menu migration and read-only student permissions in an isolated PostgreSQL database. The menu/cart workflow also runs the cart tests and the frontend build. To run the real Supabase tests there, add `SUPABASE_URL`, `SUPABASE_KEY`, `PUB_ORDER_TEST_EMAIL` and `PUB_ORDER_TEST_PASSWORD` as repository secrets. See [docs/testing.md](docs/testing.md) for a list of every test and what it checks.
+The separate menu/cart workflow also runs the cart tests and the frontend build. See [docs/testing.md](docs/testing.md) for a list of every test and what it checks.
 
 For trying the API by hand, use the Swagger UI at `/docs` on the running backend.
 
