@@ -18,7 +18,8 @@ def catalog():
 @pytest.fixture
 def database(monkeypatch, catalog):
     client = MagicMock()
-    client.table.return_value.select.return_value.order.return_value.execute.return_value = SimpleNamespace(data=catalog)
+    query = client.table.return_value.select.return_value.order.return_value
+    query.execute.return_value = SimpleNamespace(data=catalog)
     monkeypatch.setattr(menu, "get_supabase", lambda: client)
     return client
 
@@ -39,7 +40,10 @@ def cart():
 def test_public_menu_reads_database_and_maps_fields(client, database):
     response = client.get('/menu')
     assert response.status_code == 200
-    assert response.json()[0] == dict(id="burger", name="Burger", category="Entry", swipeType="Entry", available=True, description="", portion="", label="", image="")
+    assert response.json()[0] == dict(
+        id="burger", name="Burger", category="Entry", swipeType="Entry", available=True,
+        description="", portion="", label="", image="",
+    )
     database.table.assert_called_once_with('menu_items')
 
 
