@@ -72,7 +72,7 @@ requests targeting `main`. It does not deploy the app.
 - `frontend/src/menu.css`: responsive styles matching the existing login page.
 - `frontend/src/App.jsx`: switching between login and menu.
 - `frontend/src/Login.jsx`: optional browse and successful-sign-in callbacks.
-- `frontend/tests/cart.node.mjs`: automated cart and filtering checks.
+- `frontend/src/cart.test.js`: automated cart and filtering checks (run with `npm run test:cart`).
 - `.github/workflows/menu-cart.yml`: automated cart checks and production build.
 
 For evidence, capture your branch diff and the passing test output, then record the
