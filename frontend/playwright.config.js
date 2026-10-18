@@ -13,6 +13,11 @@ try {
 
 const withBackend = Boolean(process.env.PUB_ORDER_TEST_EMAIL && process.env.PUB_ORDER_TEST_PASSWORD);
 
+// CI sets this so a broken setup fails instead of quietly skipping the real-backend journeys.
+if (process.env.PUB_ORDER_REQUIRE_INTEGRATION === '1' && !withBackend) {
+  throw new Error('PUB_ORDER_REQUIRE_INTEGRATION=1, but no Supabase test user is set.');
+}
+
 function backendPython() {
   const venvPython = [
     path.join(repoRoot, 'backend/.venv/Scripts/python.exe'),
