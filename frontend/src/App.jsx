@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Login from './Login.jsx';
 import Menu from './Menu.jsx';
+import { getSupabase } from './supabase.js';
 import './menu.css';
 
 export default function App() {
@@ -13,17 +14,29 @@ export default function App() {
     return () => window.removeEventListener('hashchange', followHash);
   }, []);
 
+  useEffect(() => {
+    const client = getSupabase();
+    if (!client) return;
+    let active = true;
+    client.auth.getSession().then(({ data }) => {
+      if (active) setEmail(data?.session?.user?.email || '');
+    }).catch(() => {});
+    const { data } = client.auth.onAuthStateChange((_event, session) => {
+      if (active) setEmail(session?.user?.email || '');
+    });
+    return () => { active = false; data.subscription.unsubscribe(); };
+  }, []);
+
   function navigate(nextPage) {
     window.location.hash = nextPage;
     setPage(nextPage);
   }
 
-  if (page === 'menu') {
-    return <Menu email={email} onBack={() => navigate('login')} />;
-  }
-
-  return <Login onBrowse={() => navigate('menu')} onSignedIn={(signedInEmail) => {
-    setEmail(signedInEmail);
-    navigate('menu');
-  }} />;
+  return <>
+    <div hidden={page !== 'menu'}><Menu email={email} onBack={() => navigate('login')} /></div>
+    {page !== 'menu' && <Login onBrowse={() => navigate('menu')} onSignedIn={(signedInEmail) => {
+      setEmail(signedInEmail);
+      navigate('menu');
+    }} />}
+  </>;
 }

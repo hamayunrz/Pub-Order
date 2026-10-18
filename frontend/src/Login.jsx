@@ -281,7 +281,7 @@ export default function Login({ onBrowse, onSignedIn } = {}) {
 
           {onBrowse ? (
             <button type="button" className="login-sso" onClick={onBrowse} disabled={submitting}>
-              Browse sample menu
+              Browse menu
             </button>
           ) : null}
 
