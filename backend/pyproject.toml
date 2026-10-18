@@ -11,4 +11,4 @@ extend-immutable-calls = ["fastapi.Depends"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["app"]
+files = ["app", "serve.py"]
