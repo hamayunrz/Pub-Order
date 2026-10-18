@@ -1,10 +1,11 @@
 // Integration tests: the real App, Login, Menu, cart logic, and browser storage
-// working together. Only the outside services (Supabase and /api/me) are faked.
+// working together. Only the outside services (Supabase, /api/menu and /api/me) are faked.
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App.jsx';
 import { CART_STORAGE_KEY } from './cart.js';
+import { MENU_ITEMS } from './menu-data.js';
 import { getSupabase } from './supabase.js';
 
 vi.mock('./supabase.js', () => ({
@@ -12,14 +13,26 @@ vi.mock('./supabase.js', () => ({
 }));
 
 const EMAIL = 'student@vanderbilt.edu';
+const catalog = MENU_ITEMS.map((item) => ({ ...item, available: true }));
 let auth;
+let meResponse;
+
+function json(body, ok = true) {
+  return { ok, status: ok ? 200 : 401, json: async () => body };
+}
 
 beforeEach(() => {
   window.location.hash = '';
   window.localStorage.clear();
-  auth = { signInWithPassword: vi.fn(), signUp: vi.fn() };
+  auth = {
+    signInWithPassword: vi.fn(),
+    signUp: vi.fn(),
+    getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+    onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+  };
   getSupabase.mockReturnValue({ auth });
-  vi.stubGlobal('fetch', vi.fn());
+  meResponse = json({ id: 'user-1', email: EMAIL });
+  vi.stubGlobal('fetch', vi.fn(async (url) => (url === '/api/menu' ? json(catalog) : meResponse)));
 });
 
 afterEach(() => {
@@ -37,7 +50,6 @@ async function signIn(user) {
 describe('Sign in to menu', () => {
   it('signs in, opens the menu, and keeps the cart across pages', async () => {
     auth.signInWithPassword.mockResolvedValue({ data: { session: { access_token: 'token-1' } }, error: null });
-    fetch.mockResolvedValue({ ok: true, json: async () => ({ id: 'user-1', email: EMAIL }) });
     const user = userEvent.setup();
     render(<App />);
 
@@ -47,18 +59,18 @@ describe('Sign in to menu', () => {
     expect(window.location.hash).toBe('#menu');
     expect(fetch).toHaveBeenCalledWith('/api/me', { headers: { Authorization: 'Bearer token-1' } });
 
-    await user.click(screen.getByRole('button', { name: 'Add Pub Burger to cart' }));
+    await user.click(await screen.findByRole('button', { name: 'Add Pub Burger to cart' }));
     expect(JSON.parse(window.localStorage.getItem(CART_STORAGE_KEY)).items).toEqual({ 'pub-burger': 1 });
 
     await user.click(screen.getByRole('button', { name: 'Back to login' }));
-    await user.click(screen.getByRole('button', { name: 'Browse sample menu' }));
+    await user.click(screen.getByRole('button', { name: 'Browse menu' }));
 
     expect(screen.getByLabelText('Pub Burger quantity')).toHaveTextContent('1');
   });
 
   it('stays on the login page when the backend rejects the session', async () => {
     auth.signInWithPassword.mockResolvedValue({ data: { session: { access_token: 'token-1' } }, error: null });
-    fetch.mockResolvedValue({ ok: false, json: async () => ({ detail: 'Sign in required.' }) });
+    meResponse = json({ detail: 'Sign in required.' }, false);
     const user = userEvent.setup();
     render(<App />);
 
