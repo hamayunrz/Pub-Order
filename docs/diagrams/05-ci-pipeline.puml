@@ -1,0 +1,47 @@
+@startuml
+title Pub-Order CI/CD Pipeline (GitHub Actions: tests.yml)
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontName SansSerif
+
+start
+:Pull request or push to main;
+fork
+  partition "backend" {
+    :Install (pinned requirements);
+    :Lint (ruff);
+    :Type check (mypy);
+    :Unit tests (pytest);
+    :Start local Supabase\n(throwaway test database);
+    :Integration tests\n(API → auth → database);
+    :Database checks (SQL);
+    :Coverage report\n(fails below 70%);
+  }
+fork again
+  partition "frontend" {
+    :Install (package-lock.json);
+    :Lint (ESLint);
+    :Unit tests (Vitest);
+    :Integration tests (Vitest);
+    :Coverage report\n(fails below 70%);
+  }
+end fork
+partition "e2e" {
+  :Start local Supabase;
+  :Browser tests (Playwright)\nbrowser → Vite → FastAPI → Supabase;
+}
+if (Push to main or sprint3 tag?) then (yes)
+  partition "deliver" {
+    :Build frontend;
+    :Package pub-order-0.3.<run>-<commit>.zip;
+    :Smoke-test the package;
+    :Publish workflow artifact\n(+ GitHub Release on sprint3 tag);
+  }
+else (pull request)
+endif
+stop
+note right
+  Any failing step stops its job,
+  and a failed check blocks merging into main.
+end note
+@enduml
