@@ -10,10 +10,12 @@ vi.mock('./supabase.js', () => ({
 beforeEach(() => {
   window.location.hash = '';
   window.localStorage.clear();
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => [] })));
 });
 
 afterEach(() => {
   window.location.hash = '';
+  vi.unstubAllGlobals();
 });
 
 function loginPage() {
@@ -40,11 +42,11 @@ describe('App navigation', () => {
     expect(menuHeading()).toBeInTheDocument();
   });
 
-  it('Browse sample menu opens the menu and updates the address', async () => {
+  it('Browse menu opens the menu and updates the address', async () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: 'Browse sample menu' }));
+    await user.click(screen.getByRole('button', { name: 'Browse menu' }));
 
     expect(menuHeading()).toBeInTheDocument();
     expect(window.location.hash).toBe('#menu');

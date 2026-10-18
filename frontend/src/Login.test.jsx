@@ -332,28 +332,28 @@ describe('Callbacks to the app', () => {
     expect(onSignedIn).not.toHaveBeenCalled();
   });
 
-  it('shows Browse sample menu only when the app provides it', async () => {
+  it('shows Browse menu only when the app provides it', async () => {
     const onBrowse = vi.fn();
     const user = setup({ onBrowse });
 
-    await user.click(screen.getByRole('button', { name: 'Browse sample menu' }));
+    await user.click(screen.getByRole('button', { name: 'Browse menu' }));
 
     expect(onBrowse).toHaveBeenCalledTimes(1);
   });
 
-  it('hides Browse sample menu without a handler', () => {
+  it('hides Browse menu without a handler', () => {
     setup();
 
-    expect(screen.queryByRole('button', { name: 'Browse sample menu' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Browse menu' })).not.toBeInTheDocument();
   });
 
-  it('disables Browse sample menu while signing in', async () => {
+  it('disables Browse menu while signing in', async () => {
     auth.signInWithPassword.mockReturnValue(new Promise(() => {}));
     const user = setup({ onBrowse: vi.fn() });
 
     await fillSignIn(user);
     await user.click(submitButton());
 
-    expect(screen.getByRole('button', { name: 'Browse sample menu' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Browse menu' })).toBeDisabled();
   });
 });
