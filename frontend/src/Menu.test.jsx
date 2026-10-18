@@ -1,298 +1,159 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CART_STORAGE_KEY, MAX_SWIPES, filterMenu } from './cart.js';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import Menu from './Menu.jsx';
-import { MENU_ITEMS } from './menu-data.js';
-
+import Checkout from './Checkout.jsx';
+import App from './App.jsx';
+import { CART_STORAGE_KEY } from './cart.js';
+import { getSupabase } from './supabase.js';
+vi.mock('./supabase.js', () => ({ getSupabase: vi.fn() }));
+const catalog = [
+  { id: 'burger', name: 'Burger', category: 'Grill Main', swipeType: 'Entry', available: true, description: 'Grilled', label: '' },
+  { id: 'fries', name: 'Fries', category: 'Sides', swipeType: 'Side', available: true, description: '', label: 'Vegan' },
+  { id: 'tea', name: 'Tea', category: 'Drinks', swipeType: 'Drink', available: true, description: '', label: '' },
+];
+const meal = () => ({ swipes: 1, items: { burger: 1, fries: 1, tea: 1 }, reviewedTypes: { burger: 'Entry', fries: 'Side', tea: 'Drink' } });
+const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+const validReview = () => ({ items: catalog.map((i) => ({ ...i, quantity: 1 })), counts: { Entry: 1, Side: 1, Drink: 1 }, swipes: 1, issues: [], canSubmit: true });
+let auth;
 beforeEach(() => {
-  window.localStorage.clear();
+  localStorage.clear(); window.location.hash = '';
+  auth = { getSession: vi.fn().mockResolvedValue({ data: { session: { access_token: 'test-token', user: { email: 'student@example.com' } } } }),
+    onAuthStateChange: vi.fn().mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+    signInWithPassword: vi.fn().mockResolvedValue({ data: { session: { access_token: 'test-token' } } }),
+  };
+  getSupabase.mockReturnValue({ auth });
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(async (url) => {
+    if (url === '/api/menu') return response(catalog);
+    if (url === '/api/me') return response({ email: 'student@example.com' });
+    return response(validReview());
+  }));
 });
-
-afterEach(() => {
-  vi.restoreAllMocks();
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+const openReview = async () => {
+  localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(meal())); render(<Menu />);
+  await screen.findByRole('button', { name: 'Add Burger to cart' });
+  fireEvent.click(screen.getByRole('button', { name: 'Review checkout' }));
+};
+it('shows loading, then database items and combined search/category filters', async () => {
+  let resolve; fetch.mockReturnValueOnce(new Promise((r) => { resolve = r; })); render(<Menu />);
+  expect(screen.getByText('Loading menu…')).toBeInTheDocument();
+  await act(async () => resolve(response(catalog)));
+  expect(screen.getByRole('button', { name: 'Add Burger to cart' })).toBeEnabled();
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: ' VEGAN ' } });
+  expect(screen.getByRole('button', { name: 'Add Fries to cart' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Add Burger to cart' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Drinks' }));
+  expect(screen.getByText('No matches this time.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }));
+  expect(screen.getByRole('button', { name: 'Add Burger to cart' })).toBeInTheDocument();
 });
-
-function setup(props = {}) {
-  const user = userEvent.setup();
-  render(<Menu email="" onBack={vi.fn()} {...props} />);
-  return user;
-}
-
-function addButton(name) {
-  return screen.getByRole('button', { name: `Add ${name} to cart` });
-}
-
-function savedCart() {
-  return JSON.parse(window.localStorage.getItem(CART_STORAGE_KEY));
-}
-
-function swipeCount() {
-  return screen.getByLabelText('Meal swipes count');
-}
-
-describe('Browsing the menu', () => {
-  it('shows every menu item', () => {
-    setup();
-
-    expect(screen.getAllByRole('article')).toHaveLength(MENU_ITEMS.length);
-    expect(screen.getByText(`${MENU_ITEMS.length} items to choose from`)).toBeInTheDocument();
-  });
-
-  it('filters by category', async () => {
-    const user = setup();
-    const sides = MENU_ITEMS.filter((item) => item.category === 'Grill Side');
-
-    await user.click(screen.getByRole('button', { name: 'Grill Side' }));
-
-    expect(screen.getAllByRole('article')).toHaveLength(sides.length);
-    expect(screen.getByText(`${sides.length} items in grill side`)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Grill Side' })).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  it('searches without caring about case', async () => {
-    const user = setup();
-
-    await user.type(screen.getByLabelText('Find something delicious'), 'FRIES');
-
-    const names = screen.getAllByRole('article').map((article) => within(article).getByRole('heading').textContent);
-    expect(names).toEqual(filterMenu('fries', 'All').map((item) => item.name));
-  });
-
-  it('shows a reset option when nothing matches', async () => {
-    const user = setup();
-
-    await user.click(screen.getByRole('button', { name: 'Beverages' }));
-    await user.type(screen.getByLabelText('Find something delicious'), 'burger');
-
-    expect(screen.getByText('No matches this time.')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Reset filters' }));
-
-    expect(screen.getAllByRole('article')).toHaveLength(MENU_ITEMS.length);
-    expect(screen.getByLabelText('Find something delicious')).toHaveValue('');
-    expect(screen.getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  it('falls back to a placeholder when an image fails to load', () => {
-    const { container } = render(<Menu email="" onBack={vi.fn()} />);
-    const image = container.querySelector('img');
-
-    fireEvent.error(image);
-
-    expect(image.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
-  });
+it('shows empty catalog and disables empty checkout', async () => {
+  fetch.mockResolvedValueOnce(response([])); render(<Menu />);
+  expect(await screen.findByText(/No menu items are available yet/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Review checkout' })).toBeDisabled();
 });
-
-describe('Adding to the cart', () => {
-  it('adds an item and updates the cart, header count, and notice', async () => {
-    const user = setup();
-
-    await user.click(addButton('Pub Burger'));
-
-    expect(screen.getByRole('heading', { name: 'Your cart (1)' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Cart 1' })).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Pub Burger added to your cart.');
-    expect(screen.getByLabelText('Pub Burger quantity')).toHaveTextContent('1');
-  });
-
-  it('shows how many of an item are in the cart while more can be added', async () => {
-    const user = setup();
-
-    await user.click(screen.getByRole('button', { name: 'Increase meal swipes' }));
-    await user.click(addButton('Pub Burger'));
-
-    expect(addButton('Pub Burger')).toHaveTextContent('1 in cart');
-  });
-
-  it('blocks more items of a full type but not other types', async () => {
-    const user = setup();
-
-    await user.click(addButton('Pub Burger'));
-
-    expect(addButton('Chicken Tenders')).toBeDisabled();
-    expect(addButton('Chicken Tenders')).toHaveTextContent('Entry limit reached');
-    expect(addButton('Straight Cut Fries')).toBeEnabled();
-    expect(addButton('Sweet Tea')).toBeEnabled();
-  });
-
-  it('shows progress for each part of a meal swipe', async () => {
-    const user = setup();
-
-    await user.click(addButton('Pub Burger'));
-    await user.click(addButton('Straight Cut Fries'));
-    await user.click(addButton('Sweet Tea'));
-
-    expect(screen.getByText('Entries').querySelector('strong')).toHaveTextContent('1/1');
-    expect(screen.getByText('Sides').querySelector('strong')).toHaveTextContent('1/1');
-    expect(screen.getByText('Drinks').querySelector('strong')).toHaveTextContent('1/1');
-  });
+it('shows a failed menu request and retries successfully', async () => {
+  fetch.mockRejectedValueOnce(new Error('Network unavailable')); render(<Menu />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry menu' }));
+  expect(await screen.findByRole('button', { name: 'Add Burger to cart' })).toBeEnabled();
 });
-
-describe('Meal swipes', () => {
-  it('cannot go below one swipe', () => {
-    setup();
-
-    expect(swipeCount()).toHaveTextContent('1');
-    expect(screen.getByRole('button', { name: 'Decrease meal swipes' })).toBeDisabled();
-  });
-
-  it('raising swipes allows another item of the same type', async () => {
-    const user = setup();
-
-    await user.click(addButton('Pub Burger'));
-    await user.click(screen.getByRole('button', { name: 'Increase meal swipes' }));
-
-    expect(swipeCount()).toHaveTextContent('2');
-    expect(addButton('Chicken Tenders')).toBeEnabled();
-  });
-
-  it('cannot drop below the number of items of the busiest type', async () => {
-    const user = setup();
-
-    await user.click(screen.getByRole('button', { name: 'Increase meal swipes' }));
-    await user.click(addButton('Pub Burger'));
-    await user.click(addButton('Chicken Tenders'));
-
-    expect(screen.getByRole('button', { name: 'Decrease meal swipes' })).toBeDisabled();
-  });
-
-  it(`stops at ${MAX_SWIPES} swipes`, async () => {
-    const user = setup();
-    const increase = screen.getByRole('button', { name: 'Increase meal swipes' });
-
-    for (let swipes = 1; swipes < MAX_SWIPES; swipes += 1) {
-      await user.click(increase);
-    }
-
-    expect(swipeCount()).toHaveTextContent(String(MAX_SWIPES));
-    expect(increase).toBeDisabled();
-  });
+it('rejects malformed menu responses', async () => {
+  fetch.mockResolvedValueOnce(response([{ id: 'invalid' }])); render(<Menu />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('could not be loaded');
 });
-
-describe('Changing the cart', () => {
-  it('changes quantity within the swipe allowance', async () => {
-    const user = setup();
-
-    await user.click(screen.getByRole('button', { name: 'Increase meal swipes' }));
-    await user.click(addButton('Pub Burger'));
-    await user.click(screen.getByRole('button', { name: 'Increase Pub Burger quantity' }));
-
-    expect(screen.getByLabelText('Pub Burger quantity')).toHaveTextContent('2');
-    expect(screen.getByRole('button', { name: 'Increase Pub Burger quantity' })).toBeDisabled();
-
-    await user.click(screen.getByRole('button', { name: 'Decrease Pub Burger quantity' }));
-
-    expect(screen.getByLabelText('Pub Burger quantity')).toHaveTextContent('1');
-  });
-
-  it('decreasing to zero empties the cart', async () => {
-    const user = setup();
-
-    await user.click(addButton('Pub Burger'));
-    await user.click(screen.getByRole('button', { name: 'Decrease Pub Burger quantity' }));
-
-    expect(screen.getByRole('heading', { name: 'A little hungry?' })).toBeInTheDocument();
-  });
-
-  it('removes a single item', async () => {
-    const user = setup();
-
-    await user.click(addButton('Pub Burger'));
-    await user.click(addButton('Sweet Tea'));
-    await user.click(screen.getByRole('button', { name: 'Remove Pub Burger from cart' }));
-
-    expect(screen.queryByLabelText('Pub Burger quantity')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Sweet Tea quantity')).toHaveTextContent('1');
-    expect(screen.getByRole('status')).toHaveTextContent('Pub Burger removed from your cart.');
-  });
-
-  it('clears the whole cart', async () => {
-    const user = setup();
-
-    await user.click(addButton('Pub Burger'));
-    await user.click(addButton('Sweet Tea'));
-    await user.click(screen.getByRole('button', { name: 'Clear cart' }));
-
-    expect(screen.getByRole('heading', { name: 'A little hungry?' })).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Cart cleared.');
-    expect(screen.queryByRole('button', { name: 'Clear cart' })).not.toBeInTheDocument();
-  });
+it('cannot add unavailable items', async () => {
+  fetch.mockResolvedValueOnce(response(catalog.map((i) => ({ ...i, available: false })))); render(<Menu />);
+  expect(await screen.findByRole('button', { name: 'Add Burger to cart' })).toBeDisabled();
 });
-
-describe('Saving the cart', () => {
-  it('saves changes to browser storage', async () => {
-    const user = setup();
-
-    await user.click(addButton('Pub Burger'));
-
-    expect(savedCart()).toEqual({ swipes: 1, items: { 'pub-burger': 1 } });
-    expect(screen.getByText(/Cart saved on this browser/)).toBeInTheDocument();
-  });
-
-  it('restores a saved cart', () => {
-    window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify({ swipes: 2, items: { 'pub-burger': 2 } }));
-
-    setup();
-
-    expect(swipeCount()).toHaveTextContent('2');
-    expect(screen.getByLabelText('Pub Burger quantity')).toHaveTextContent('2');
-  });
-
-  it('starts empty when the saved cart is corrupt', () => {
-    window.localStorage.setItem(CART_STORAGE_KEY, '{broken');
-
-    setup();
-
-    expect(screen.getByRole('heading', { name: 'A little hungry?' })).toBeInTheDocument();
-    expect(swipeCount()).toHaveTextContent('1');
-  });
-
-  it('explains when browser storage is unavailable', () => {
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('QuotaExceededError');
-    });
-
-    setup();
-
-    expect(screen.getByText(/Browser storage is unavailable/)).toBeInTheDocument();
-  });
+it('shows quantities and total, checks server, and retains cart after success', async () => {
+  await openReview();
+  expect(screen.getByText('1 meal swipe')).toBeInTheDocument();
+  expect(screen.getByText('× 1 · Entry')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Validate checkout' }));
+  expect(await screen.findByText(/Your meal is valid/)).toBeInTheDocument();
+  const call = fetch.mock.calls.find(([url]) => url === '/api/checkout/review');
+  expect(call[1].headers.Authorization).toBe('Bearer test-token');
+  expect(JSON.parse(call[1].body).items[0]).toEqual({ id: 'burger', quantity: 1, expectedSwipeType: 'Entry' });
+  expect(JSON.parse(localStorage.getItem(CART_STORAGE_KEY)).items).toEqual(meal().items);
 });
-
-describe('Header and navigation', () => {
-  it('shows the signed-in email and a way back to login', async () => {
-    const onBack = vi.fn();
-    const user = setup({ email: 'student@vanderbilt.edu', onBack });
-
-    expect(screen.getByText('Signed in as student@vanderbilt.edu')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Back to login' }));
-
-    expect(onBack).toHaveBeenCalledTimes(1);
-  });
-
-  it('offers sign in when browsing without an account', () => {
-    setup();
-
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeInTheDocument();
-    expect(screen.queryByText(/Signed in as/)).not.toBeInTheDocument();
-  });
-
-  it('the cart link moves focus to the cart', async () => {
-    Element.prototype.scrollIntoView = vi.fn();
-    const user = setup();
-
-    await user.click(screen.getByRole('link', { name: 'Cart 0' }));
-
-    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
-    expect(screen.getByRole('heading', { name: 'Your cart (0)' })).toHaveFocus();
-  });
-
-  it('the skip link moves focus to the menu', async () => {
-    const user = setup();
-
-    await user.click(screen.getByRole('link', { name: 'Skip to menu' }));
-
-    expect(screen.getByRole('main')).toHaveFocus();
-  });
+it.each([{}, { burger: 1.5 }, { burger: -1 }, { burger: 11 }, { burger: '1' }, { burger: 1 }])('blocks empty, invalid, or incomplete checkout %j', (items) => {
+  render(<Checkout cart={{ ...meal(), items }} catalog={catalog} />);
+  expect(screen.getByRole('button', { name: 'Validate checkout' })).toBeDisabled(); expect(fetch).not.toHaveBeenCalled();
+});
+it('asks guest to sign in without discarding cart', async () => {
+  auth.getSession.mockResolvedValue({ data: { session: null } });
+  const onSignIn = vi.fn(); render(<Checkout cart={meal()} catalog={catalog} onSignIn={onSignIn} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Validate checkout' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Sign in and keep cart' }));
+  expect(onSignIn).toHaveBeenCalledOnce(); expect(fetch).not.toHaveBeenCalled();
+});
+it('expired server session requires sign-in', async () => {
+  fetch.mockResolvedValueOnce(response({}, 401)); render(<Checkout cart={meal()} catalog={catalog} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Validate checkout' }));
+  expect(await screen.findByRole('button', { name: 'Sign in and keep cart' })).toBeInTheDocument();
+});
+it('blocks changed types and unavailable items until reviewed', async () => {
+  fetch.mockImplementation(async (url) => url === '/api/menu' ? response(catalog) : response({ canSubmit: false,
+    items: catalog.map((i) => ({ ...i, swipeType: i.id === 'burger' ? 'Side' : i.swipeType, available: i.id !== 'tea' })),
+    issues: [{ id: 'burger', code: 'changed', message: 'Burger now counts as Side.' }, { id: 'tea', code: 'unavailable', message: 'Tea is unavailable.' }] }));
+  await openReview(); fireEvent.click(screen.getByRole('button', { name: 'Validate checkout' }));
+  expect(await screen.findByText('Burger now counts as Side.')).toBeInTheDocument();
+  expect(screen.queryByText(/Your meal is valid/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Review updated menu' }));
+  expect(screen.getByRole('button', { name: 'Add Tea to cart' })).toBeDisabled();
+  expect(JSON.parse(localStorage.getItem(CART_STORAGE_KEY)).reviewedTypes.burger).toBe('Side');
+  expect(JSON.parse(localStorage.getItem(CART_STORAGE_KEY)).items.tea).toBe(1);
+});
+it('handles failed validation and allows retry', async () => {
+  fetch.mockRejectedValueOnce(new Error('Service offline')); render(<Checkout cart={meal()} catalog={catalog} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Validate checkout' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Service offline');
+  fireEvent.click(screen.getByRole('button', { name: 'Validate checkout' }));
+  expect(await screen.findByText(/Your meal is valid/)).toBeInTheDocument();
+});
+it('ignores stale validation response after cart changes', async () => {
+  let resolve; fetch.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+  const { rerender } = render(<Checkout cart={meal()} catalog={catalog} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Validate checkout' }));
+  await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+  rerender(<Checkout cart={{ ...meal(), items: {} }} catalog={catalog} />);
+  await act(async () => resolve(response(validReview())));
+  expect(screen.queryByText(/Your meal is valid/)).not.toBeInTheDocument();
+});
+it('preserves checkout through login navigation when storage is blocked', async () => {
+  localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(meal()));
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
+  auth.getSession.mockResolvedValue({ data: { session: null } }); window.location.hash = '#menu'; render(<App />);
+  await screen.findByRole('button', { name: 'Add Burger to cart' });
+  fireEvent.click(screen.getByRole('button', { name: 'Review checkout' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Validate checkout' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Sign in and keep cart' }));
+  fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'student@example.com' } });
+  fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'test-password' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Sign in', exact: true }));
+  expect(await screen.findByRole('heading', { name: 'Review your meal' })).toBeVisible();
+  expect(screen.getByText('1 meal swipe')).toBeVisible(); expect(screen.getByText('× 1 · Entry')).toBeVisible();
+});
+it('builds a meal through clicks and the header returns from checkout to cart', async () => {
+  render(<Menu />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Add Burger to cart' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Add Fries to cart' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Add Tea to cart' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Review checkout' }));
+  expect(screen.getByText('× 1 · Entry')).toBeInTheDocument();
+  expect(screen.getByText('× 1 · Side')).toBeInTheDocument();
+  expect(screen.getByText('× 1 · Drink')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Validate checkout' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Cart 3' }));
+  expect(screen.getByRole('heading', { name: 'Your cart (3)' })).toHaveFocus();
+});
+it('refreshes catalog without dropping a saved cart or its reviewed classifications', async () => {
+  localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(meal())); render(<Menu />);
+  await screen.findByRole('button', { name: 'Add Burger to cart' });
+  fetch.mockResolvedValueOnce(response(catalog.map((i) => ({ ...i, available: i.id !== 'burger' }))));
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh menu' }));
+  await screen.findByText(/Unavailable — remove before checkout/);
+  expect(JSON.parse(localStorage.getItem(CART_STORAGE_KEY)).items.burger).toBe(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Review checkout' }));
+  expect(screen.getByRole('button', { name: 'Validate checkout' })).toBeDisabled();
 });

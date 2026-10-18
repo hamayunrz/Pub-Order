@@ -41,6 +41,8 @@ docs/diagrams/  UML diagrams
 
 First, copy `.env.example` to `.env` in the repo root and fill in the Supabase URL and anon key.
 
+Before browsing the database menu, apply `supabase/migrations/202610120001_menu_items.sql` once in the intended Supabase project. See [Hamayun’s US1/US2 walkthrough](docs/hamayun-us1-us2.md) for setup, the meal-swipe rules, API contract, tests, and the US3 handoff.
+
 Frontend (Node.js 22.12+):
 
 ```sh
@@ -83,7 +85,9 @@ Frontend (Vitest and React Testing Library), from `frontend/`:
 ```sh
 npm test            # run once
 npm run test:watch  # rerun on file changes
+npm run test:cart   # cart logic tests only
 npm run coverage    # with branch coverage (fails below 70%)
+npm run build       # production compilation
 ```
 
 End-to-end (Playwright), from `frontend/`. The first time, download the browser with `npx playwright install chromium`.
@@ -101,7 +105,7 @@ PUB_ORDER_TEST_PASSWORD=...
 
 These names deliberately don't start with `SUPABASE_`, because the frontend sends every `SUPABASE_*` value to the browser.
 
-GitHub Actions runs the backend, frontend and E2E tests on every pull request and push to `main`. To run the real Supabase tests there, add `SUPABASE_URL`, `SUPABASE_KEY`, `PUB_ORDER_TEST_EMAIL` and `PUB_ORDER_TEST_PASSWORD` as repository secrets. See [docs/testing.md](docs/testing.md) for a list of every test and what it checks.
+GitHub Actions runs the backend, frontend and E2E tests on every pull request and push to `main`, and verifies the menu migration and read-only student permissions in an isolated PostgreSQL database. The menu/cart workflow also runs the cart tests and the frontend build. To run the real Supabase tests there, add `SUPABASE_URL`, `SUPABASE_KEY`, `PUB_ORDER_TEST_EMAIL` and `PUB_ORDER_TEST_PASSWORD` as repository secrets. See [docs/testing.md](docs/testing.md) for a list of every test and what it checks.
 
 For trying the API by hand, use the Swagger UI at `/docs` on the running backend.
 

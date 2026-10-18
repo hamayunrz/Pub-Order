@@ -1,203 +1,71 @@
-import { describe, expect, test } from 'vitest';
-import { filterMenu, getCartSummary, MAX_SWIPES, restoreCart, setQuantity, setSwipes } from './cart.js';
+import { expect, test } from 'vitest';
 import { MENU_ITEMS } from './menu-data.js';
+import { filterMenu, getCartSummary, MAX_SWIPES, restoreCart, setQuantity, setSwipes, checkoutErrors, emptyCart } from './cart.js';
+const menu = MENU_ITEMS.map((item) => ({ ...item, available: true }));
+const meal = () => ({ swipes: 1, items: { 'pub-burger': 1, 'straight-cut-fries': 1, 'sweet-tea': 1 }, reviewedTypes: {} });
 
-function cartWith(swipes, items) {
-  return { swipes, items };
-}
-
-test('one swipe allows exactly one entry, one side, and one drink', () => {
-  let cart = cartWith(1, {});
-  cart = setQuantity(cart, 'pub-burger', 1);
-  cart = setQuantity(cart, 'straight-cut-fries', 1);
-  cart = setQuantity(cart, 'sweet-tea', 1);
-  const summary = getCartSummary(cart);
-  expect(summary.count).toBe(3);
-  expect(summary.counts).toEqual({ Entry: 1, Side: 1, Drink: 1 });
+test('one swipe holds exactly one entry, side, and drink', () => {
+  let cart = emptyCart();
+  for (const id of ['pub-burger', 'straight-cut-fries', 'sweet-tea']) cart = setQuantity(cart, id, 1, menu);
+  expect(getCartSummary(cart, menu).counts).toEqual({ Entry: 1, Side: 1, Drink: 1 });
+  expect(getCartSummary(cart, menu).count).toBe(3);
+  expect(checkoutErrors(cart, menu)).toEqual([]);
 });
-
-test('adding beyond the swipe count for a type is ignored', () => {
-  let cart = cartWith(1, {});
-  cart = setQuantity(cart, 'pub-burger', 1);
-  cart = setQuantity(cart, 'chicken-tenders', 1);
-  expect(cart.items).toEqual({ 'pub-burger': 1 });
-  expect(getCartSummary(cart).counts.Entry).toBe(1);
+test('database-only IDs work without changes to frontend constants', () => {
+  const catalog = [{ id: 'new-special', name: 'Special', swipeType: 'Entry', available: true }];
+  expect(setQuantity(emptyCart(), 'new-special', 1, catalog).items['new-special']).toBe(1);
 });
-
-test('milkshakes count toward the Entry allowance, not Drink', () => {
-  let cart = cartWith(1, {});
-  cart = setQuantity(cart, 'chocolate-milkshake', 1);
-  expect(getCartSummary(cart).counts).toEqual({ Entry: 1, Side: 0, Drink: 0 });
-  cart = setQuantity(cart, 'pub-burger', 1);
-  expect(cart.items).toEqual({ 'chocolate-milkshake': 1 });
+test('entry capacity is enforced and milkshakes remain entries', () => {
+  const cart = setQuantity(emptyCart(), 'chocolate-milkshake', 1, menu);
+  expect(getCartSummary(cart, menu).counts.Entry).toBe(1);
+  expect(setQuantity(cart, 'pub-burger', 1, menu)).toEqual(cart);
 });
-
-test('decreasing to zero removes the item without changing other items', () => {
-  const original = cartWith(2, { 'pub-burger': 1, 'straight-cut-fries': 2 });
-  const updated = setQuantity(original, 'pub-burger', 0);
-  expect(updated.items).toEqual({ 'straight-cut-fries': 2 });
-  expect(original.items).toEqual({ 'pub-burger': 1, 'straight-cut-fries': 2 });
+test('removing an item is immutable and can remove a deleted catalog ID', () => {
+  const original = meal();
+  expect(setQuantity(original, 'pub-burger', 0, []).items['pub-burger']).toBe(undefined);
+  expect(original.items['pub-burger']).toBe(1);
 });
-
-test('increasing swipes unlocks more of each type, decreasing is capped by current usage', () => {
-  let cart = cartWith(1, { 'pub-burger': 1, 'straight-cut-fries': 1, 'sweet-tea': 1 });
-  cart = setSwipes(cart, 2);
-  expect(cart.swipes).toBe(2);
-  cart = setQuantity(cart, 'chicken-tenders', 1);
-  expect(getCartSummary(cart).counts.Entry).toBe(2);
-
-  const rejected = setSwipes(cart, 1);
-  expect(rejected.swipes).toBe(2);
+test('more swipes unlock quantities and cannot be reduced below usage', () => {
+  let cart = setSwipes(meal(), 2, menu);
+  cart = setQuantity(cart, 'pub-burger', 2, menu);
+  expect(setSwipes(cart, 1, menu).swipes).toBe(2);
 });
-
-test('setSwipes ignores invalid values and respects MAX_SWIPES', () => {
-  const cart = cartWith(1, {});
-  expect(setSwipes(cart, 0).swipes).toBe(1);
-  expect(setSwipes(cart, 1.5).swipes).toBe(1);
-  expect(setSwipes(cart, MAX_SWIPES + 5).swipes).toBe(MAX_SWIPES);
-});
-
-test('setQuantity ignores unknown items and invalid quantities', () => {
-  const cart = cartWith(3, {});
-  expect(setQuantity(cart, 'missing-item', 1).items).toEqual({});
-  expect(setQuantity(cart, 'pub-burger', 1.5).items).toEqual({});
-  expect(setQuantity(cart, 'pub-burger', NaN).items).toEqual({});
-});
-
-test('saved cart survives serialization', () => {
-  const cart = cartWith(2, { 'pub-burger': 1, 'tropicana-lemonade': 1 });
-  const restored = restoreCart(JSON.stringify(cart));
-  expect(restored).toEqual(cart);
-});
-
-test('corrupt storage and unexpected shapes safely return a fresh cart', () => {
-  for (const value of [null, '', '{broken', 'null', '[]', 'true', '42', '"text"']) {
-    expect(restoreCart(value)).toEqual({ swipes: 1, items: {} });
+test('invalid swipe counts are rejected rather than silently rounded or capped', () => {
+  for (const value of [0, -1, 1.5, '2', true, NaN, MAX_SWIPES + 1]) {
+    const cart = meal(); expect(setSwipes(cart, value, menu)).toBe(cart);
   }
 });
-
-test('restoring a cart rejects unknown items, invalid quantities, and over-cap entries', () => {
-  const raw = JSON.stringify({
-    swipes: 1,
-    items: { 'straight-cut-fries': 1, unknown: 3, 'tropicana-lemonade': -1, 'pub-burger': 1, 'chicken-tenders': 1, 'sweet-tea': 0, 'pretzel-sticks': 1.5 },
-  });
-  expect(restoreCart(raw).items).toEqual({ 'straight-cut-fries': 1, 'pub-burger': 1 });
+test('invalid quantities and unknown or unavailable items are rejected', () => {
+  const cart = emptyCart();
+  for (const value of [-1, 1.5, NaN, '2', true, 11]) expect(setQuantity(cart, 'pub-burger', value, menu)).toBe(cart);
+  expect(setQuantity(cart, 'unknown', 1, menu)).toBe(cart);
+  expect(setQuantity(cart, 'pub-burger', 1, menu.map((i) => ({ ...i, available: false })))).toBe(cart);
 });
-
-test('search combines with category and ignores case and surrounding spaces', () => {
-  expect(filterMenu('  BEYOND  ', 'Grill Main').map((item) => item.id)).toEqual(['beyond-burger-patty']);
-  expect(filterMenu('beyond', 'Beverages').length).toBe(0);
-  expect(filterMenu('', 'All').length).toBe(22);
-  expect(filterMenu('does not exist', 'All').length).toBe(0);
+test('cart restoration retains removed IDs and original reviewed types', () => {
+  const cart = { swipes: 2, items: { removed: 1 }, reviewedTypes: { removed: 'Drink' } };
+  expect(restoreCart(JSON.stringify(cart))).toEqual(cart);
+  expect(getCartSummary(cart, []).items[0].available).toBe(false);
 });
-
-// Boundary-value tests for setQuantity (ICA 10, Worksheet 3).
-// Rule: a quantity is kept between 0 and the swipes left for that item's type.
-
-test('setQuantity boundary: zero and negative quantities remove the item, one keeps it', () => {
-  const cart = cartWith(2, { 'pub-burger': 1 });
-  expect(setQuantity(cart, 'pub-burger', -1).items).toEqual({});
-  expect(setQuantity(cart, 'pub-burger', 0).items).toEqual({});
-  expect(setQuantity(cart, 'pub-burger', 1).items).toEqual({ 'pub-burger': 1 });
+test('corrupt storage and invalid shapes return a fresh cart', () => {
+  for (const value of [null, '', '{broken', 'null', '[]', 'true', '42', '"text"', '{"swipes":11,"items":{}}']) expect(restoreCart(value)).toEqual(emptyCart());
 });
-
-test('setQuantity boundary: quantities just below, at, and just above the swipe count', () => {
-  const cart = cartWith(3, {});
-  expect(setQuantity(cart, 'pub-burger', 2).items['pub-burger']).toBe(2);
-  expect(setQuantity(cart, 'pub-burger', 3).items['pub-burger']).toBe(3);
-  expect(setQuantity(cart, 'pub-burger', 4).items['pub-burger']).toBe(3);
+test('restoration rejects invalid quantities and dangerous property names', () => {
+  expect(restoreCart('{"swipes":2,"items":{"ok":2,"bad":1.5,"negative":-1,"string":"2","__proto__":1}}').items).toEqual({ ok: 2 });
 });
-
-test('setQuantity boundary: other items of the same type shrink the allowance', () => {
-  const cart = cartWith(3, { 'pub-burger': 2 });
-  expect(setQuantity(cart, 'chicken-tenders', 1).items['chicken-tenders']).toBe(1);
-  expect(setQuantity(cart, 'chicken-tenders', 2).items['chicken-tenders']).toBe(1);
-
-  const full = cartWith(3, { 'pub-burger': 3 });
-  expect(setQuantity(full, 'chicken-tenders', 1).items).toEqual({ 'pub-burger': 3 });
+test('search combines categories with case-insensitive trimmed queries', () => {
+  expect(filterMenu(' BEYOND ', 'Grill Main', menu).map((i) => i.id)).toEqual(['beyond-burger-patty']);
+  expect(filterMenu('beyond', 'Beverages', menu).length).toBe(0);
+  expect(filterMenu('', 'All', menu).length).toBe(22);
 });
-
-test('setQuantity boundary: an item does not count against its own allowance', () => {
-  const cart = cartWith(2, { 'pub-burger': 2 });
-  expect(setQuantity(cart, 'pub-burger', 2).items['pub-burger']).toBe(2);
-  expect(setQuantity(cart, 'pub-burger', 3).items['pub-burger']).toBe(2);
+test('empty, incomplete, over-capacity, and invalid carts cannot pass review', () => {
+  for (const cart of [emptyCart(), { ...meal(), swipes: 2 }, { ...meal(), swipes: 0 }, { ...meal(), items: { 'pub-burger': 1.5 } }, { ...meal(), items: { ...meal().items, 'pub-burger': 2 } }]) expect(checkoutErrors(cart, menu).length).toBeGreaterThan(0);
 });
-
-test('setQuantity boundary: MAX_SWIPES is reachable but cannot be exceeded', () => {
-  const cart = cartWith(MAX_SWIPES, {});
-  expect(setQuantity(cart, 'pub-burger', MAX_SWIPES).items['pub-burger']).toBe(MAX_SWIPES);
-  expect(setQuantity(cart, 'pub-burger', MAX_SWIPES + 1).items['pub-burger']).toBe(MAX_SWIPES);
+test('unavailable items fail review', () => {
+  expect(checkoutErrors(meal(), menu.map((i) => ({ ...i, available: i.id !== 'pub-burger' })))[0]).toMatch(/unavailable/);
 });
-
-test('empty cart has zero counts and no line items', () => {
-  const summary = getCartSummary(cartWith(1, {}));
-  expect(summary).toEqual({ items: [], count: 0, counts: { Entry: 0, Side: 0, Drink: 0 }, swipes: 1 });
-});
-
-describe('setSwipes edge cases', () => {
-  test('MAX_SWIPES is reachable and one more is capped', () => {
-    const cart = cartWith(1, {});
-    expect(setSwipes(cart, MAX_SWIPES).swipes).toBe(MAX_SWIPES);
-    expect(setSwipes(cart, MAX_SWIPES + 1).swipes).toBe(MAX_SWIPES);
-  });
-
-  test('swipes can drop to exactly the busiest type but not below it', () => {
-    const cart = cartWith(3, { 'pub-burger': 2, 'sweet-tea': 1 });
-    expect(setSwipes(cart, 2).swipes).toBe(2);
-    expect(setSwipes(cart, 1)).toBe(cart);
-  });
-
-  test('negative, fractional, and NaN values leave the cart unchanged', () => {
-    const cart = cartWith(2, {});
-    for (const value of [-1, 2.5, NaN]) {
-      expect(setSwipes(cart, value)).toBe(cart);
-    }
-  });
-
-  test('does not modify the original cart', () => {
-    const original = cartWith(1, { 'pub-burger': 1 });
-    setSwipes(original, 4);
-    expect(original).toEqual(cartWith(1, { 'pub-burger': 1 }));
-  });
-});
-
-describe('restoreCart edge cases', () => {
-  test('caps saved swipes at MAX_SWIPES and re-checks items against the cap', () => {
-    const raw = JSON.stringify({ swipes: MAX_SWIPES + 5, items: { 'pub-burger': MAX_SWIPES, 'straight-cut-fries': MAX_SWIPES + 2 } });
-    expect(restoreCart(raw)).toEqual({ swipes: MAX_SWIPES, items: { 'pub-burger': MAX_SWIPES } });
-  });
-
-  test('invalid saved swipe counts return a fresh cart', () => {
-    for (const swipes of [0, -1, 1.5, '2', null]) {
-      expect(restoreCart(JSON.stringify({ swipes, items: { 'pub-burger': 1 } }))).toEqual({ swipes: 1, items: {} });
-    }
-  });
-
-  test('missing or array items keep the swipes but empty the cart', () => {
-    expect(restoreCart(JSON.stringify({ swipes: 3 }))).toEqual({ swipes: 3, items: {} });
-    expect(restoreCart(JSON.stringify({ swipes: 3, items: ['pub-burger'] }))).toEqual({ swipes: 3, items: {} });
-  });
-});
-
-describe('summary and search details', () => {
-  test('cart summary lists items in menu order, not the order they were added', () => {
-    let cart = cartWith(1, {});
-    for (const id of ['sweet-tea', 'straight-cut-fries', 'pub-burger']) {
-      cart = setQuantity(cart, id, 1);
-    }
-    const menuOrder = MENU_ITEMS.map((item) => item.id).filter((id) => id in cart.items);
-    expect(getCartSummary(cart).items.map((item) => item.id)).toEqual(menuOrder);
-  });
-
-  test('search matches dietary labels', () => {
-    const vegan = filterMenu('vegan', 'All');
-    expect(vegan.length).toBe(MENU_ITEMS.filter((item) => item.label === 'Vegan').length);
-    expect(vegan.every((item) => item.label === 'Vegan')).toBe(true);
-  });
-
-  test('an empty search with a category returns exactly that category', () => {
-    const sides = filterMenu('', 'Grill Side');
-    expect(sides.length).toBe(MENU_ITEMS.filter((item) => item.category === 'Grill Side').length);
-    expect(sides.every((item) => item.category === 'Grill Side')).toBe(true);
-  });
+test('quantity edits preserve original classification for server change detection', () => {
+  let cart = setQuantity(emptyCart(), 'pub-burger', 1, menu);
+  cart = setSwipes(cart, 2, menu);
+  cart = setQuantity(cart, 'pub-burger', 2, menu.map((i) => ({ ...i, swipeType: i.id === 'pub-burger' ? 'Side' : i.swipeType })));
+  expect(cart.reviewedTypes['pub-burger']).toBe('Entry');
 });

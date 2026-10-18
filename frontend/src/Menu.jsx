@@ -1,22 +1,31 @@
-import { useEffect, useState } from 'react';
-import { CATEGORIES, MENU_IMAGE_BASE } from './menu-data.js';
+import { useEffect, useRef, useState } from 'react';
+import Checkout from './Checkout.jsx';
+import { loadMenu } from './menu-api.js';
 import { CART_STORAGE_KEY, MAX_SWIPES, filterMenu, getCartSummary, restoreCart, setQuantity, setSwipes } from './cart.js';
 
+const MENU_IMAGE_BASE = '/images/menu/';
 const IMAGE_FALLBACK = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300'%3E%3Crect width='400' height='300' fill='%23f2ecdf'/%3E%3Ctext x='50%25' y='50%25' font-family='sans-serif' font-size='18' fill='%23a89f8c' text-anchor='middle' dominant-baseline='middle'%3ENo image%3C/text%3E%3C/svg%3E";
 
 function initialCart() {
   try { return restoreCart(window.localStorage.getItem(CART_STORAGE_KEY)); }
-  catch { return { swipes: 1, items: {} }; }
+  catch { return { swipes: 1, items: {}, reviewedTypes: {} }; }
 }
 
 export default function Menu({ email, onBack }) {
   const [cart, setCart] = useState(initialCart);
+  const [catalog, setCatalog] = useState([]);
+  const [loadState, setLoadState] = useState('loading');
+  const [loadError, setLoadError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const [checkout, setCheckout] = useState(false);
+  const focusCartAfterRender = useRef(false);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
   const [notice, setNotice] = useState('');
   const [canSave, setCanSave] = useState(true);
-  const summary = getCartSummary(cart);
-  const visibleItems = filterMenu(query, category);
+  const summary = getCartSummary(cart, catalog);
+  const visibleItems = filterMenu(query, category, catalog);
+  const categories = ['All', ...new Set(catalog.map((item) => item.category))];
   const minSwipesNeeded = Math.max(summary.counts.Entry, summary.counts.Side, summary.counts.Drink, 1);
 
   useEffect(() => {
@@ -26,22 +35,62 @@ export default function Menu({ email, onBack }) {
     } catch { setCanSave(false); }
   }, [cart]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoadState('loading'); setLoadError('');
+    loadMenu(controller.signal).then((items) => {
+      if (controller.signal.aborted) return;
+      setCatalog(items); setLoadState('ready');
+    }).catch((error) => {
+      if (controller.signal.aborted) return;
+      setLoadError(error.message); setLoadState('error');
+    });
+    return () => controller.abort();
+  }, [attempt]);
+
+  function acceptChanges(result) {
+    // Update only reviewed items; do not erase the rest of the catalog.
+    const updates = new Map(result.items.map((item) => [item.id, item]));
+    const unavailable = new Set(result.issues.filter((issue) => issue.code === 'unavailable').map((issue) => issue.id));
+    setCatalog((current) => current.map((item) => ({ ...item, ...updates.get(item.id), ...(unavailable.has(item.id) ? { available: false } : {}) })));
+    setCart((current) => ({ ...current, reviewedTypes: { ...current.reviewedTypes, ...Object.fromEntries(result.items.map((item) => [item.id, item.swipeType])) } }));
+    setCheckout(false);
+    setNotice('Menu changes reviewed. Adjust your cart and validate checkout again.');
+  }
+
+  function focusCart() {
+    document.getElementById('cart')?.scrollIntoView?.({ behavior: 'smooth' });
+    document.getElementById('cart-title')?.focus({ preventScroll: true });
+  }
+
+  function showCart() {
+    if (checkout) { focusCartAfterRender.current = true; setCheckout(false); }
+    else focusCart();
+  }
+
+  useEffect(() => {
+    if (!checkout && focusCartAfterRender.current) {
+      focusCartAfterRender.current = false;
+      focusCart();
+    }
+  }, [checkout]);
+
   function addItem(item) {
-    setCart((current) => setQuantity(current, item.id, (current.items[item.id] || 0) + 1));
+    setCart((current) => setQuantity(current, item.id, (current.items[item.id] || 0) + 1, catalog));
     setNotice(`${item.name} added to your cart.`);
   }
 
   function changeQuantity(item, change) {
-    setCart((current) => setQuantity(current, item.id, (current.items[item.id] || 0) + change));
+    setCart((current) => setQuantity(current, item.id, (current.items[item.id] || 0) + change, catalog));
   }
 
   function removeItem(item) {
-    setCart((current) => setQuantity(current, item.id, 0));
+    setCart((current) => setQuantity(current, item.id, 0, catalog));
     setNotice(`${item.name} removed from your cart.`);
   }
 
   function changeSwipes(change) {
-    setCart((current) => setSwipes(current, current.swipes + change));
+    setCart((current) => setSwipes(current, current.swipes + change, catalog));
   }
 
   return (
@@ -55,11 +104,7 @@ export default function Menu({ email, onBack }) {
         <div className="menu-header-actions">
           {email ? <span className="menu-account">Signed in as {email}</span> : null}
           <button className="menu-text-button" onClick={onBack}>{email ? 'Back to login' : 'Sign in'}</button>
-          <a className="menu-cart-link" href="#cart" onClick={(event) => {
-            event.preventDefault();
-            document.getElementById('cart').scrollIntoView({ behavior: 'smooth' });
-            document.getElementById('cart-title').focus({ preventScroll: true });
-          }}>Cart <span>{summary.count}</span></a>
+          <button className="menu-cart-link" onClick={showCart}>Cart <span>{summary.count}</span></button>
         </div>
       </header>
 
@@ -70,19 +115,23 @@ export default function Menu({ email, onBack }) {
             <h1 id="menu-heading">What sounds good?</h1>
             <p>Find a favorite, add a side, and make it yours.</p>
           </div>
-          <div className="menu-demo-note"><strong>Sample menu</strong><span>Demo items for meal swipe orders. No orders are sent to the kitchen.</span></div>
+          <div className="menu-demo-note"><strong>Meal swipe menu</strong><span>Review your meal before ordering. One entrée, side, and drink per swipe.</span></div>
         </section>
 
-        <div className="menu-layout">
+        {checkout ? <Checkout cart={cart} catalog={catalog} onBack={showCart} onSignIn={onBack} onAcceptChanges={acceptChanges} /> : <div className="menu-layout">
           <section className="menu-catalog" aria-label="Food and drinks">
+            {loadState === 'ready' && <button className="menu-text-button" onClick={() => setAttempt((n) => n + 1)}>Refresh menu</button>}
             <label className="menu-search-label" htmlFor="menu-search">Find something delicious</label>
             <input id="menu-search" className="menu-search" type="search" placeholder="Search burgers, fries, drinks…" value={query} onChange={(event) => setQuery(event.target.value)} />
             <div className="menu-categories" role="group" aria-label="Menu categories">
-              {CATEGORIES.map((name) => <button key={name} className="menu-category" aria-pressed={category === name} onClick={() => setCategory(name)}>{name}</button>)}
+              {categories.map((name) => <button key={name} className="menu-category" aria-pressed={category === name} onClick={() => setCategory(name)}>{name}</button>)}
             </div>
+            {loadState === 'loading' && <p role="status">Loading menu…</p>}
+            {loadState === 'error' && <div role="alert"><p>{loadError}</p><button className="menu-add" onClick={() => setAttempt((n) => n + 1)}>Retry menu</button></div>}
+            {loadState === 'ready' && catalog.length === 0 && <p role="status">No menu items are available yet. Please check back soon.</p>}
             <p className="menu-results" aria-live="polite">{visibleItems.length} {visibleItems.length === 1 ? 'item' : 'items'}{category !== 'All' ? ` in ${category.toLowerCase()}` : ' to choose from'}</p>
             <div className="menu-grid">
-              {visibleItems.map((item) => {
+              {(loadState === 'ready' ? visibleItems : []).map((item) => {
                 const itemQuantity = cart.items[item.id] || 0;
                 const typeFull = summary.counts[item.swipeType] >= summary.swipes;
                 return (
@@ -101,8 +150,8 @@ export default function Menu({ email, onBack }) {
                     {item.description ? <p>{item.description}</p> : null}
                     <div className="menu-item-bottom">
                       <span className="menu-item-swipe-type">{item.swipeType}</span>
-                      <button className="menu-add" aria-label={`Add ${item.name} to cart`} disabled={typeFull} onClick={() => addItem(item)}>
-                        {typeFull ? `${item.swipeType} limit reached` : '+ Add'}
+                      <button className="menu-add" aria-label={`Add ${item.name} to cart`} disabled={!item.available || typeFull} onClick={() => addItem(item)}>
+                        {!item.available ? 'Unavailable' : typeFull ? `${item.swipeType} limit reached` : '+ Add'}
                         {itemQuantity > 0 && !typeFull ? <span> · {itemQuantity} in cart</span> : null}
                       </button>
                     </div>
@@ -110,11 +159,11 @@ export default function Menu({ email, onBack }) {
                 );
               })}
             </div>
-            {visibleItems.length === 0 ? <div className="menu-no-results"><h2>No matches this time.</h2><p>Try another search or explore all categories.</p><button className="menu-text-button" onClick={() => { setQuery(''); setCategory('All'); }}>Reset filters</button></div> : null}
+            {loadState === 'ready' && catalog.length > 0 && visibleItems.length === 0 ? <div className="menu-no-results"><h2>No matches this time.</h2><p>Try another search or explore all categories.</p><button className="menu-text-button" onClick={() => { setQuery(''); setCategory('All'); }}>Reset filters</button></div> : null}
           </section>
 
           <aside id="cart" className="menu-cart" aria-labelledby="cart-title">
-            <div className="menu-cart-heading"><h2 id="cart-title" tabIndex={-1}>Your cart <span>({summary.count})</span></h2>{summary.count > 0 ? <button className="menu-text-button" onClick={() => { setCart((current) => ({ ...current, items: {} })); setNotice('Cart cleared.'); }}>Clear cart</button> : null}</div>
+            <div className="menu-cart-heading"><h2 id="cart-title" tabIndex={-1}>Your cart <span>({summary.count})</span></h2>{summary.count > 0 ? <button className="menu-text-button" onClick={() => { setCart((current) => ({ ...current, items: {}, reviewedTypes: {} })); setNotice('Cart cleared.'); }}>Clear cart</button> : null}</div>
             <div className="menu-swipe-control">
               <span className="menu-swipe-control-label">Meal swipes</span>
               <div className="menu-quantity" role="group" aria-label="Number of meal swipes">
@@ -128,12 +177,12 @@ export default function Menu({ email, onBack }) {
                 <ul className="menu-cart-items">
                   {summary.items.map((item) => <li key={item.id}>
                     <div className="menu-cart-item-title"><h3>{item.name}</h3><span className="menu-item-swipe-type">{item.swipeType}</span></div>
-                    <p className="menu-cart-item-portion">{item.portion}</p>
+                    <p className="menu-cart-item-portion">{item.portion}{loadState === 'ready' && !item.available ? ' Unavailable — remove before checkout.' : ''}</p>
                     <div className="menu-cart-controls">
                       <div className="menu-quantity" role="group" aria-label={`Quantity for ${item.name}`}>
                         <button aria-label={`Decrease ${item.name} quantity`} onClick={() => changeQuantity(item, -1)}>−</button>
                         <span aria-label={`${item.name} quantity`}>{item.quantity}</span>
-                        <button aria-label={`Increase ${item.name} quantity`} disabled={summary.counts[item.swipeType] >= summary.swipes} onClick={() => changeQuantity(item, 1)}>+</button>
+                        <button aria-label={`Increase ${item.name} quantity`} disabled={loadState !== 'ready' || !item.available || summary.counts[item.swipeType] >= summary.swipes} onClick={() => changeQuantity(item, 1)}>+</button>
                       </div>
                       <button className="menu-text-button" aria-label={`Remove ${item.name} from cart`} onClick={() => removeItem(item)}>Remove</button>
                     </div>
@@ -144,12 +193,13 @@ export default function Menu({ email, onBack }) {
                   <span>Sides <strong>{summary.counts.Side}/{summary.swipes}</strong></span>
                   <span>Drinks <strong>{summary.counts.Drink}/{summary.swipes}</strong></span>
                 </div>
-                <p className="menu-cart-footnote">Each meal swipe covers one entry, one side, and one drink. Checkout is not available in this demo.</p>
+                <p className="menu-cart-footnote">Each meal swipe covers one entrée, one side, and one drink.</p>
               </>
             )}
-            <p className="menu-save-note">{canSave ? `Cart saved on this browser. Up to ${MAX_SWIPES} meal swipes per order.` : 'Browser storage is unavailable. Your cart will last until you leave this page.'}</p>
+            <button className="menu-add checkout-button" disabled={loadState !== 'ready' || summary.count === 0} onClick={() => { setNotice(''); setCheckout(true); }}>Review checkout</button>
+            <p className="menu-save-note">{canSave ? `Cart saved on this browser. Up to ${MAX_SWIPES} meal swipes per order.` : 'Browser storage is unavailable. Your cart stays while you sign in, but will be lost if you refresh or close this tab.'}</p>
           </aside>
-        </div>
+        </div>}
         <p className="menu-notice" role="status">{notice}</p>
       </main>
     </div>
