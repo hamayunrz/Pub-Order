@@ -13,7 +13,7 @@ Tests marked "×N" run once per input listed.
 | Level | What it means here | Where |
 |---|---|---|
 | **Unit and component** | One function or component, with Supabase and `fetch` faked | `backend/tests/`, `frontend/src/*.test.js(x)` |
-| **Integration** | Several real pieces together. Some fake only the outside services; others call a **real Supabase project** | `frontend/src/signin-flow.test.jsx`, the contract tests, `backend/tests/integration/` |
+| **Integration** | Several real pieces together. Some fake only the outside services; others call a **real Supabase project** | `frontend/src/signin-flow.integration.test.jsx`, the contract tests, `backend/tests/integration/` |
 | **Database** | The menu migration applied to a throwaway PostgreSQL database, checking its data and permissions | `supabase/tests/menu_items.sql` |
 | **E2E** | The real app in a real browser (Chromium), started with the Vite dev server. Menu journeys answer `/api/menu` with the seed menu; the sign-in journey uses the real backend | `frontend/e2e/` |
 
@@ -311,14 +311,14 @@ Covers [App.jsx](../frontend/src/App.jsx), which switches between the login page
 | [Sign in on the menu returns to the login page](../frontend/src/App.test.jsx#L55) | The menu's **Sign in** goes back to login and sets `#login`. |
 | [follows address changes such as the browser back button](../frontend/src/App.test.jsx#L66) | Changing the address switches pages. |
 
-### Integration: sign in to menu: [signin-flow.test.jsx](../frontend/src/signin-flow.test.jsx)
+### Integration: sign in to menu: [signin-flow.integration.test.jsx](../frontend/src/signin-flow.integration.test.jsx)
 
 The real App, Login, Menu, cart rules and browser storage working together. Only Supabase, `/api/menu` and `/api/me` are faked.
 
 | Test | What it checks |
 |---|---|
-| [signs in, opens the menu, and keeps the cart across pages](../frontend/src/signin-flow.test.jsx#L51) | Sign in → the menu opens with "Signed in as …" → an added item is saved → going back to login and browsing again shows the same cart. |
-| [stays on the login page when the backend rejects the session](../frontend/src/signin-flow.test.jsx#L71) | If the backend rejects the login, the user stays on the login page and sees the error. |
+| [signs in, opens the menu, and keeps the cart across pages](../frontend/src/signin-flow.integration.test.jsx#L51) | Sign in → the menu opens with "Signed in as …" → an added item is saved → going back to login and browsing again shows the same cart. |
+| [stays on the login page when the backend rejects the session](../frontend/src/signin-flow.integration.test.jsx#L71) | If the backend rejects the login, the user stays on the login page and sees the error. |
 
 ### Contract with the backend: [vite-config.test.js](../frontend/src/vite-config.test.js)
 
