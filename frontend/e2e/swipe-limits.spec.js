@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
+import { mockMenu } from './menu-fixture.js';
 
 test('meal swipes limit each part of the meal and can be raised', async ({ page }) => {
+  await mockMenu(page);
   await page.goto('/#menu');
 
   const addBurger = page.getByRole('button', { name: 'Add Pub Burger to cart' });

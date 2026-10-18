@@ -1,4 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { catalog, mockMenu } from './menu-fixture.js';
+
+test.beforeEach(async ({ page }) => {
+  await mockMenu(page);
+});
 
 function progress(page, label) {
   return page.locator('.menu-swipe-progress span', { hasText: label }).locator('strong');
@@ -6,7 +11,7 @@ function progress(page, label) {
 
 test('a student browses the menu, fills a meal swipe, and keeps the cart after a reload', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Browse sample menu' }).click();
+  await page.getByRole('button', { name: 'Browse menu' }).click();
 
   await expect(page.getByRole('heading', { name: 'What sounds good?' })).toBeVisible();
   await expect(page).toHaveURL(/#menu$/);
@@ -36,5 +41,5 @@ test('search and category filters narrow the menu and can be reset', async ({ pa
 
   await page.getByRole('button', { name: 'Reset filters' }).click();
 
-  await expect(page.getByRole('article')).toHaveCount(22);
+  await expect(page.getByRole('article')).toHaveCount(catalog.length);
 });
