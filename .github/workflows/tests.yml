@@ -45,9 +45,11 @@ jobs:
         env:
           PUB_ORDER_REQUIRE_INTEGRATION: "1"
         run: pytest -m integration -rs --cov=app --cov-branch --cov-append --cov-report=
-      - name: Database checks (menu migration and permissions)
+      - name: Database checks (migrations, constraints and permissions)
         working-directory: .
-        run: psql "$PUB_ORDER_TEST_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/menu_items.sql
+        run: |
+          psql "$PUB_ORDER_TEST_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/menu_items.sql
+          psql "$PUB_ORDER_TEST_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/orders.sql
       - name: Coverage report (fails below 70%)
         run: coverage report --show-missing --fail-under=70
 
