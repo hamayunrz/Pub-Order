@@ -109,7 +109,7 @@ npm run test:e2e    # starts the dev server itself (and the backend when a test 
 - **e2e:** browser tests against the real stack after both pass.
 - **deliver:** on every push to `main`, packages a versioned, runnable build (`pub-order-0.3.<run>-<commit>.zip`, run with `uvicorn serve:app`) as a workflow artifact. Pushing a `sprint3` tag also publishes it as a GitHub Release.
 
-The separate menu/cart workflow also runs the cart tests and the frontend build. See [docs/testing.md](docs/testing.md) for a list of every test and what it checks.
+The frontend job also checks that the production build succeeds. See [docs/testing.md](docs/testing.md) for a list of every test and what it checks.
 
 For trying the API by hand, use the Swagger UI at `/docs` on the running backend.
 

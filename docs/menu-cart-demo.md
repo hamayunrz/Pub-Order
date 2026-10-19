@@ -60,9 +60,9 @@ category filtering, and empty totals. They need no additional test dependencies.
 They do not verify live authentication or the UI; use the demo steps for UI checks.
 The new test command is separate from the pending `initial-tests` branch's Vitest
 suite. Its `.node.mjs` filename keeps Vitest from collecting Node-runner tests.
-The `Menu and cart` GitHub Actions workflow runs these eight checks and the
-production build on pushes to `feature/menu-and-cart` or `main`, and on pull
-requests targeting `main`. It does not deploy the app.
+The `Tests` GitHub Actions workflow (`.github/workflows/tests.yml`) runs the cart
+checks with the rest of the frontend tests, plus the production build, on every
+pull request and every push to `main`.
 
 ## Files to explain
 
@@ -73,7 +73,7 @@ requests targeting `main`. It does not deploy the app.
 - `frontend/src/App.jsx`: switching between login and menu.
 - `frontend/src/Login.jsx`: optional browse and successful-sign-in callbacks.
 - `frontend/src/cart.test.js`: automated cart and filtering checks (run with `npm run test:cart`).
-- `.github/workflows/menu-cart.yml`: automated cart checks and production build.
+- `.github/workflows/tests.yml`: automated tests (including the cart checks) and production build.
 
 For evidence, capture your branch diff and the passing test output, then record the
 demo above. Describe this as a sample menu/cart feature; it does not place orders.

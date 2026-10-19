@@ -75,6 +75,8 @@ jobs:
         run: npm run test:integration
       - name: Coverage report (fails below 70% of branches)
         run: npm run coverage
+      - name: Production build
+        run: npm run build
 
   e2e:
     name: e2e
