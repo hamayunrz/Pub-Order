@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 
 import pytest
@@ -40,3 +41,16 @@ def test_missing_frontend_build_gives_a_clear_error(serve, tmp_path, monkeypatch
 
     with pytest.raises(RuntimeError, match="Built frontend not found"):
         serve.find_frontend_dist()
+
+
+def test_browser_config_uses_runtime_public_settings(serve, monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://runtime.supabase.co")
+    monkeypatch.setenv("SUPABASE_KEY", "public-anon-key")
+    monkeypatch.setenv("PUB_ORDER_TEST_SERVICE_KEY", "private-test-key")
+    response = TestClient(serve.app).get("/config.js")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["content-type"].startswith("application/javascript")
+    config = json.loads(response.text.removeprefix("window.__PUB_ORDER_CONFIG__ = ").removesuffix(";"))
+    assert config == {"supabaseUrl": "https://runtime.supabase.co", "supabaseKey": "public-anon-key"}
+    assert "private-test-key" not in response.text

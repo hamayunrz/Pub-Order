@@ -6,17 +6,30 @@ server serves the frontend and forwards /api to `app.main:app` instead.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 
+from app.config import get_settings
 from app.main import app as api
 
 
 def create_app(frontend_dist: Path) -> FastAPI:
     site = FastAPI()
+    @site.get("/config.js", include_in_schema=False)
+    def browser_config():
+        # Only public browser settings belong here; never expose test or service-role keys.
+        settings = get_settings()
+        config = {"supabaseUrl": settings.supabase_url, "supabaseKey": settings.supabase_key}
+        return Response(
+            "window.__PUB_ORDER_CONFIG__ = " + json.dumps(config) + ";",
+            media_type="application/javascript",
+            headers={"Cache-Control": "no-store"},
+        )
+
     site.mount("/api", api)
     site.mount("/", StaticFiles(directory=frontend_dist, html=True), name="frontend")
     return site

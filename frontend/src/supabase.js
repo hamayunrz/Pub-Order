@@ -7,8 +7,9 @@ export function getSupabase() {
     return client;
   }
 
-  const url = import.meta.env.SUPABASE_URL;
-  const key = import.meta.env.SUPABASE_KEY;
+  const runtime = window.__PUB_ORDER_CONFIG__;
+  const url = runtime ? runtime.supabaseUrl : import.meta.env.SUPABASE_URL;
+  const key = runtime ? runtime.supabaseKey : import.meta.env.SUPABASE_KEY;
   if (!url || !key) {
     return null;
   }
