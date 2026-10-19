@@ -57,12 +57,18 @@ class CheckoutRequest(BaseModel):
 @router.post("/checkout/review")
 def review_checkout(cart: CheckoutRequest, user=Depends(get_current_user)):
     """Return current database values; this endpoint never creates an order."""
+    return review_cart(cart)
+
+
+def review_cart(cart: CheckoutRequest) -> dict[str, Any]:
+    """Check a cart against the current menu. Shared by checkout review and order placement."""
     ids = [item.id for item in cart.items]
     if len(ids) != len(set(ids)):
         raise HTTPException(422, "Each menu item must appear only once.")
     catalog = {item.id: item for item in load_menu()}
     counts = {"Entry": 0, "Side": 0, "Drink": 0}
-    issues, items = [], []
+    issues: list[dict[str, Any]] = []
+    items: list[dict[str, Any]] = []
     for requested in cart.items:
         current = catalog.get(requested.id)
         if current is None:
