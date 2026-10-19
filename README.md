@@ -43,7 +43,9 @@ docs/diagrams/  UML diagrams
 
 First, copy `.env.example` to `.env` in the repo root and fill in the Supabase URL and anon key.
 
-Before browsing the database menu, apply `supabase/migrations/202610120001_menu_items.sql` once in the intended Supabase project. See [Hamayun’s US1/US2 walkthrough](docs/hamayun-us1-us2.md) for setup, the meal-swipe rules, API contract, tests, and the US3 handoff.
+Before using the app, apply the migrations in `supabase/migrations/` once, in filename order, to the intended Supabase project: `202610120001_menu_items.sql` (the menu) and then `202610180001_orders.sql` (orders). See [Hamayun’s US1/US2 walkthrough](docs/hamayun-us1-us2.md) for setup, the meal-swipe rules, API contract, tests, and the US3 handoff.
+
+**Orders API (US3).** Signed-in students place orders with `POST /api/orders` (the checkout review body plus an `idempotencyKey`), and read their own orders with `GET /api/orders` and `GET /api/orders/{id}`. Orders are saved only through the `place_order` database function, which re-checks the meal and stores the order and its items together; retrying with the same key returns the same order. New orders start as `Received`; the status column also allows `Preparing`, `Ready` and `Collected` for US5 and US6.
 
 Frontend (Node.js 22.12+):
 
