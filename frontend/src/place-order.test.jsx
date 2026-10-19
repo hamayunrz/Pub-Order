@@ -1,6 +1,6 @@
 // US3: placing an order from checkout. Supabase and fetch are faked; Menu, Checkout, the cart
 // rules and browser storage are real.
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CART_STORAGE_KEY } from './cart.js';
@@ -169,4 +169,29 @@ describe('Placing an order', () => {
 
     expect(screen.queryByRole('heading', { name: 'Order received' })).not.toBeInTheDocument();
   });
+});
+
+
+it('acknowledges a saved order after Back to cart unmounts checkout', async () => {
+  let finish;
+  orderResponses.push(new Promise((resolve) => { finish = resolve; }));
+  const user = await openValidatedReview();
+  await user.click(screen.getByRole('button', { name: 'Place order' }));
+  await user.click(screen.getByRole('button', { name: 'Back to cart' }));
+  await act(async () => { finish(response(order, 201)); });
+  expect(savedCart().items).toEqual({});
+  expect(screen.getByRole('heading', { name: 'Order received' })).toBeInTheDocument();
+});
+
+it('keeps a newly edited cart when an earlier order finishes saving', async () => {
+  let finish;
+  orderResponses.push(new Promise((resolve) => { finish = resolve; }));
+  const user = await openValidatedReview();
+  await user.click(screen.getByRole('button', { name: 'Place order' }));
+  await user.click(screen.getByRole('button', { name: 'Back to cart' }));
+  await user.click(screen.getByRole('button', { name: 'Clear cart' }));
+  await user.click(screen.getByRole('button', { name: 'Add Burger to cart' }));
+  await act(async () => { finish(response(order, 201)); });
+  expect(savedCart().items).toEqual({ burger: 1 });
+  expect(screen.getByRole('heading', { name: 'Order received' })).toBeInTheDocument();
 });

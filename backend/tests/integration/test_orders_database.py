@@ -184,3 +184,30 @@ def test_database_function_rechecks_the_meal(admin, student):
 
     assert error.value.code == "22023"
     assert stored_orders(admin, key) == []
+
+
+
+def test_retry_after_menu_change_returns_saved_order(client, admin, student, placed, restore_burger):
+    key = str(uuid4())
+    first = place(client, student[0], key)
+    assert first.status_code == 201
+    placed.append(first.json()["id"])
+    admin.table("menu_items").update({"available": False}).eq("id", "pub-burger").execute()
+
+    retry = place(client, student[0], key)
+
+    assert retry.status_code == 201
+    assert retry.json() == first.json()
+    assert len(stored_orders(admin, key)) == 1
+
+
+def test_retry_keys_are_scoped_to_the_student(client, student, other_student, placed):
+    key = str(uuid4())
+    first = place(client, student[0], key)
+    assert first.status_code == 201
+    placed.append(first.json()["id"])
+    second = place(client, other_student[0], key)
+    assert second.status_code == 201
+    placed.append(second.json()["id"])
+    assert second.json()["id"] != first.json()["id"]
+    assert place(client, student[0], key).json() == first.json()

@@ -59,12 +59,15 @@ class FakeDatabase:
         if self.mode == "rpc":
             if self.rpc_error is not None:
                 raise self.rpc_error
+            for row in self.rows:
+                if row["id"] == self.rpc_result:
+                    row["idempotency_key"] = self.rpc_calls[-1][1]["p_idempotency_key"]
             return SimpleNamespace(data=self.rpc_result)
         if self.select_error is not None:
             raise self.select_error
         if self.filter is None:
             return SimpleNamespace(data=self.rows)
-        return SimpleNamespace(data=[row for row in self.rows if row["id"] == self.filter[1]])
+        return SimpleNamespace(data=[row for row in self.rows if row.get(self.filter[0]) == self.filter[1]])
 
 
 @pytest.fixture
@@ -264,3 +267,31 @@ def test_read_failures_are_sanitized(client, database, signed_in, path):
 
     assert response.status_code == 503
     assert "private" not in response.text
+
+
+@pytest.mark.parametrize("menu_offline", [False, True])
+def test_retry_returns_saved_order_without_revalidating_menu(
+    client, menu_database, catalog, database, signed_in, menu_offline,
+):
+    first = client.post("/orders", json=meal(), headers=HEADERS)
+    assert first.status_code == 201
+    catalog[0]["available"] = False
+    query = menu_database.table.return_value.select.return_value.order.return_value
+    if menu_offline:
+        query.execute.side_effect = RuntimeError("Menu offline")
+    query.execute.reset_mock()
+
+    retry = client.post("/orders", json=meal(), headers=HEADERS)
+
+    assert retry.status_code == 201
+    assert retry.json() == first.json()
+    assert len(database.rpc_calls) == 1
+    query.execute.assert_not_called()
+
+
+def test_failed_retry_lookup_does_not_create_an_order(client, menu_database, database, signed_in):
+    database.select_error = RuntimeError("private database details")
+    response = client.post("/orders", json=meal(), headers=HEADERS)
+    assert response.status_code == 503
+    assert "private" not in response.text
+    assert database.rpc_calls == []

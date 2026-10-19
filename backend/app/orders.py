@@ -69,8 +69,8 @@ def order_json(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def fetch_order(db: SyncPostgrestClient, order_id: str) -> dict[str, Any] | None:
-    rows = cast(list[dict[str, Any]], db.from_("orders").select(ORDER_COLUMNS).eq("id", order_id).execute().data)
+def fetch_order(db: SyncPostgrestClient, value: str, column: str = "id") -> dict[str, Any] | None:
+    rows = cast(list[dict[str, Any]], db.from_("orders").select(ORDER_COLUMNS).eq(column, value).execute().data)
     return order_json(rows[0]) if rows else None
 
 
@@ -81,11 +81,20 @@ def place_order(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
 ):
     """Save a reviewed meal as an order. Repeating the same idempotencyKey returns the same order."""
+    db = user_client(access_token(credentials))
+    # A retry acknowledges the saved order even if today's menu has changed or is offline.
+    # This client uses the student's token, so RLS also applies to the key lookup.
+    try:
+        existing = fetch_order(db, str(order.idempotencyKey), "idempotency_key")
+    except Exception as exc:
+        raise HTTPException(503, "Could not check your order. Your cart is still here; please try again.") from exc
+    if existing is not None:
+        return existing
+
     review = review_cart(order)
     if not review["canSubmit"]:
         raise HTTPException(409, {"message": "Your meal needs review before ordering.", "issues": review["issues"]})
 
-    db = user_client(access_token(credentials))
     params: Any = {
         "p_idempotency_key": str(order.idempotencyKey),
         "p_swipes": order.swipes,

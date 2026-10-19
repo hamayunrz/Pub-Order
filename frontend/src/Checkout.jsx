@@ -44,11 +44,12 @@ export default function Checkout({ cart, catalog, onBack, onSignIn, onAcceptChan
     setPlacing(true); setError(''); setSignInRequired(false);
     try {
       const outcome = await placeOrder(keyed, catalog);
-      if (request !== activeRequest.current) return;
       if (outcome.order) {
-        onOrderPlaced?.(outcome.order);
+        // A saved order must reach Menu even if Back to cart unmounted this review.
+        onOrderPlaced?.(outcome.order, keyed.checkoutKey);
         return;
       }
+      if (request !== activeRequest.current) return;
       // The menu changed since the review: show the latest review so the student can fix the meal.
       const review = outcome.issues ? await reviewCart(keyed, catalog) : outcome;
       if (request !== activeRequest.current) return;

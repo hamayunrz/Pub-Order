@@ -57,8 +57,9 @@ export default function Menu({ email, onBack }) {
   }
 
   // Placeholder confirmation until US4 adds the full order confirmation page.
-  function orderPlaced(order) {
-    setCart(emptyCart());
+  function orderPlaced(order, checkoutKey) {
+    // Preserve a new/edited meal if the student changed it while this order was saving.
+    setCart((current) => current.checkoutKey === checkoutKey ? emptyCart() : current);
     setCheckout(false);
     setPlacedOrder(order);
     setNotice(`Order received. Your order number is ${order.id.slice(0, 8)}.`);
