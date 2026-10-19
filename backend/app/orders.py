@@ -1,6 +1,8 @@
-"""Placing a student's order (US3). The database only accepts orders through the
-place_order() function, which re-checks the meal and saves the order with its items in one
-transaction. Requests act as the signed-in student, so row-level security applies."""
+"""Placing and reading a student's orders (US3; the read endpoints also serve US4 and US6).
+
+The database only accepts orders through the place_order() function, which re-checks the
+meal and saves the order with its items in one transaction. Requests act as the signed-in
+student, so row-level security applies."""
 
 from __future__ import annotations
 
@@ -104,4 +106,38 @@ def place_order(
         raise HTTPException(503, "Could not save your order. Your cart is still here; please try again.") from exc
     if saved is None:
         raise HTTPException(503, "Could not save your order. Your cart is still here; please try again.")
+    return saved
+
+
+@router.get("/orders")
+def list_orders(
+    user=Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """The signed-in student's orders, newest first. Row-level security hides everyone else's."""
+    db = user_client(access_token(credentials))
+    try:
+        rows = cast(
+            list[dict[str, Any]],
+            db.from_("orders").select(ORDER_COLUMNS).order("created_at", desc=True).execute().data,
+        )
+    except Exception as exc:
+        raise HTTPException(503, "Could not load your orders. Please try again.") from exc
+    return [order_json(row) for row in rows]
+
+
+@router.get("/orders/{order_id}")
+def read_order(
+    order_id: UUID,
+    user=Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """One of the signed-in student's orders. Someone else's order looks the same as a missing one."""
+    db = user_client(access_token(credentials))
+    try:
+        saved = fetch_order(db, str(order_id))
+    except Exception as exc:
+        raise HTTPException(503, "Could not load this order. Please try again.") from exc
+    if saved is None:
+        raise HTTPException(404, "Order not found.")
     return saved

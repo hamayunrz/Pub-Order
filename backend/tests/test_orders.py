@@ -32,11 +32,16 @@ class FakeDatabase:
             ],
         }]
 
+        self.select_error = None
+        self.orderings = []
+
     def rpc(self, name, params):
         self.rpc_calls.append((name, params))
+        self.mode, self.filter = "rpc", None
         return self
 
     def from_(self, table):
+        self.mode, self.filter = "select", None
         return self
 
     def select(self, columns):
@@ -46,11 +51,19 @@ class FakeDatabase:
         self.filter = (column, value)
         return self
 
+    def order(self, column, desc=False):
+        self.orderings.append((column, desc))
+        return self
+
     def execute(self):
-        if self.rpc_calls and self.rpc_error is not None:
-            raise self.rpc_error
-        if getattr(self, "filter", None) is None:
+        if self.mode == "rpc":
+            if self.rpc_error is not None:
+                raise self.rpc_error
             return SimpleNamespace(data=self.rpc_result)
+        if self.select_error is not None:
+            raise self.select_error
+        if self.filter is None:
+            return SimpleNamespace(data=self.rows)
         return SimpleNamespace(data=[row for row in self.rows if row["id"] == self.filter[1]])
 
 
@@ -199,3 +212,55 @@ def test_user_client_acts_as_the_student(monkeypatch):
     assert db.headers["Authorization"] == "Bearer student-token"
     assert db.headers["apikey"] == "anon-key"
     assert db.headers["Accept"] == "application/json"
+
+
+OLDER = {"id": "0a1b2c3d-0000-4000-8000-000000000002", "status": "Collected", "swipes": 1,
+         "created_at": "2026-10-18T09:00:00+00:00", "order_items": []}
+
+
+def test_lists_the_students_orders_newest_first(client, database, signed_in):
+    database.rows = [database.rows[0], OLDER]
+
+    response = client.get("/orders", headers=HEADERS)
+
+    assert response.status_code == 200
+    assert [order["id"] for order in response.json()] == [ORDER_ID, OLDER["id"]]
+    assert database.orderings == [("created_at", True)]
+    assert database.tokens == ["test-token"]
+
+
+def test_reads_one_of_the_students_orders(client, database, signed_in):
+    response = client.get(f"/orders/{ORDER_ID}", headers=HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["id"] == ORDER_ID
+    assert [item["swipeType"] for item in response.json()["items"]] == ["Entry", "Side", "Drink"]
+
+
+def test_an_order_the_student_cannot_see_is_404(client, database, signed_in):
+    response = client.get("/orders/0a1b2c3d-0000-4000-8000-0000000000ff", headers=HEADERS)
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Order not found."}
+
+
+def test_an_invalid_order_id_is_422(client, database, signed_in):
+    assert client.get("/orders/not-an-id", headers=HEADERS).status_code == 422
+
+
+@pytest.mark.parametrize("path", ["/orders", f"/orders/{ORDER_ID}"])
+def test_guest_cannot_read_orders(client, database, path):
+    response = client.get(path)
+
+    assert response.status_code == 401
+    assert database.tokens == []
+
+
+@pytest.mark.parametrize("path", ["/orders", f"/orders/{ORDER_ID}"])
+def test_read_failures_are_sanitized(client, database, signed_in, path):
+    database.select_error = APIError({"message": "private database details", "code": "XX000"})
+
+    response = client.get(path, headers=HEADERS)
+
+    assert response.status_code == 503
+    assert "private" not in response.text
