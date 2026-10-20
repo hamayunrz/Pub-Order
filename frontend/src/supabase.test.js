@@ -17,6 +17,7 @@ describe('getSupabase', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    delete window.__PUB_ORDER_CONFIG__;
   });
 
   it('returns null when the URL is missing', async () => {
@@ -48,4 +49,20 @@ describe('getSupabase', () => {
     expect(second).toBe(first);
     expect(createClient).toHaveBeenCalledTimes(1);
   });
+  it('uses server settings even when the frontend was built for another project', async () => {
+    vi.stubEnv('SUPABASE_URL', 'https://old.supabase.co');
+    vi.stubEnv('SUPABASE_KEY', 'old-key');
+    window.__PUB_ORDER_CONFIG__ = { supabaseUrl: 'https://runtime.supabase.co', supabaseKey: 'public-key' };
+    const { getSupabase } = await loadModules();
+    expect(getSupabase()).toEqual({ url: 'https://runtime.supabase.co', key: 'public-key' });
+  });
+
+  it('does not fall back to a different project when runtime settings are empty', async () => {
+    vi.stubEnv('SUPABASE_URL', 'https://old.supabase.co');
+    vi.stubEnv('SUPABASE_KEY', 'old-key');
+    window.__PUB_ORDER_CONFIG__ = { supabaseUrl: '', supabaseKey: '' };
+    const { getSupabase } = await loadModules();
+    expect(getSupabase()).toBeNull();
+  });
+
 });

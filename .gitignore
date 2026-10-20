@@ -32,3 +32,12 @@ build/
 
 # Logs
 *.log
+
+# Test coverage
+coverage/
+.coverage
+htmlcov/
+
+# Playwright
+test-results/
+playwright-report/

@@ -1,5 +1,5 @@
 """Public catalog and authenticated, read-only checkout review (US1 / US2)."""
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,7 +28,8 @@ def load_menu() -> list[MenuItem]:
         response = get_supabase().table("menu_items").select(
             "id,name,category,swipe_type,description,portion,label,image,available"
         ).order("sort_order").execute()
-        return [MenuItem(**{**row, "swipeType": row["swipe_type"]}) for row in response.data]
+        rows = cast(list[dict[str, Any]], response.data)
+        return [MenuItem.model_validate({**row, "swipeType": row["swipe_type"]}) for row in rows]
     except Exception as exc:
         # Do not leak database details or credentials to the browser.
         raise HTTPException(503, "Menu is temporarily unavailable. Please try again.") from exc
@@ -65,15 +66,31 @@ def review_checkout(cart: CheckoutRequest, user=Depends(get_current_user)):
     for requested in cart.items:
         current = catalog.get(requested.id)
         if current is None:
-            issues.append({"id": requested.id, "code": "unavailable", "message": f"{requested.id} is no longer on the menu. Remove it before continuing."})
+            issues.append({
+                "id": requested.id,
+                "code": "unavailable",
+                "message": f"{requested.id} is no longer on the menu. Remove it before continuing.",
+            })
             continue
         items.append({**current.model_dump(), "quantity": requested.quantity})
         counts[current.swipeType] += requested.quantity
         if not current.available:
-            issues.append({"id": current.id, "code": "unavailable", "message": f"{current.name} is unavailable. Remove it before continuing."})
+            issues.append({
+                "id": current.id,
+                "code": "unavailable",
+                "message": f"{current.name} is unavailable. Remove it before continuing.",
+            })
         if current.swipeType != requested.expectedSwipeType:
-            issues.append({"id": current.id, "code": "changed", "message": f"{current.name} now counts as {current.swipeType}. Review the updated meal before continuing."})
+            issues.append({
+                "id": current.id,
+                "code": "changed",
+                "message": f"{current.name} now counts as {current.swipeType}. "
+                "Review the updated meal before continuing.",
+            })
     for kind, count in counts.items():
         if count != cart.swipes:
-            issues.append({"code": "composition", "message": f"Choose exactly {cart.swipes} {kind.lower()} item(s); your cart has {count}."})
+            issues.append({
+                "code": "composition",
+                "message": f"Choose exactly {cart.swipes} {kind.lower()} item(s); your cart has {count}.",
+            })
     return {"items": items, "swipes": cart.swipes, "counts": counts, "issues": issues, "canSubmit": not issues}
