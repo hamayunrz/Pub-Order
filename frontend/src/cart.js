@@ -1,4 +1,4 @@
-import { allowedOptionIds, customizationText, isOptionId } from './customizations.js';
+import { allowedOptionIds, customizationText } from './customizations.js';
 
 export const CART_STORAGE_KEY = 'pub-order.sample-cart.v1';
 export const MAX_SWIPES = 10;
@@ -32,7 +32,8 @@ export function restoreCart(serialized) {
     const savedOptions = record(value.customizations) ? value.customizations : {};
     const customizations = Object.fromEntries(Object.entries(savedOptions).flatMap(([id, selected]) => {
       if (!itemIds.has(id) || !Array.isArray(selected)) return [];
-      const options = [...new Set(selected.filter((optionId) => typeof optionId === 'string' && isOptionId(optionId)))].sort();
+      const allowed = allowedOptionIds({ id });
+      const options = [...new Set(selected.filter((optionId) => typeof optionId === 'string' && allowed.has(optionId)))].sort();
       return options.length ? [[id, options]] : [];
     }));
     return {

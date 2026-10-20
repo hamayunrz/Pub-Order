@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { SWIPE_TYPES } from './cart.js';
+import { optionsFor } from './customizations.js';
 import { CATEGORIES, MENU_ITEMS } from './menu-data.js';
 import { hasListedNutrition, nutritionFor } from './nutrition.js';
 
@@ -33,6 +34,21 @@ describe('menu data', () => {
     expect(new Set(CATEGORIES).size).toBe(CATEGORIES.length);
     for (const category of CATEGORIES.slice(1)) {
       expect(MENU_ITEMS.some((item) => item.category === category), category).toBe(true);
+    }
+  });
+});
+
+describe('customization options', () => {
+  test('only grill mains can be customized, and each list fits on an order', () => {
+    for (const item of MENU_ITEMS) {
+      const options = optionsFor(item);
+      if (item.category === 'Grill Main') {
+        expect(options.length, item.id).toBeGreaterThan(0);
+        expect(options.length, item.id).toBeLessThanOrEqual(8);
+        expect(new Set(options.map((option) => option.id)).size, item.id).toBe(options.length);
+      } else {
+        expect(options, item.id).toEqual([]);
+      }
     }
   });
 });

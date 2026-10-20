@@ -1,5 +1,5 @@
 import { useEffect, useId, useState } from 'react';
-import { includedOptionIds, optionsFor } from './customizations.js';
+import { customizeHint, includedOptionIds, optionsFor } from './customizations.js';
 
 export default function CustomizeDialog({ item, selected, inCart, onClose, onSave }) {
   const titleId = useId();
@@ -24,8 +24,13 @@ export default function CustomizeDialog({ item, selected, inCart, onClose, onSav
   }
 
   function save() {
-    onSave(options.filter((option) => !included.has(option.id)).map((option) => option.id));
+    onSave(options.filter((option) => included.has(option.id) !== option.included).map((option) => option.id));
   }
+
+  const groups = [
+    ['Comes with', options.filter((option) => option.included)],
+    ['Add', options.filter((option) => !option.included)],
+  ].filter(([, group]) => group.length > 0);
 
   return (
     <div className="customize-backdrop" onMouseDown={onClose}>
@@ -37,20 +42,25 @@ export default function CustomizeDialog({ item, selected, inCart, onClose, onSav
         onMouseDown={(event) => event.stopPropagation()}
       >
         <h2 id={titleId}>Customize {item.name}</h2>
-        <p>Everything starts included. Uncheck anything you want left off, then {inCart ? 'save this cart item' : 'add it to your cart'}.</p>
-        <fieldset>
-          <legend className="visually-hidden">Options for {item.name}</legend>
-          {options.map((option) => (
-            <label key={option.id}>
-              <input
-                type="checkbox"
-                checked={included.has(option.id)}
-                onChange={() => toggle(option.id)}
-              />
-              {option.label}
-            </label>
-          ))}
-        </fieldset>
+        <p>{customizeHint(item)} {inCart ? 'Then save this cart item.' : 'Then add it to your cart.'}</p>
+        {groups.map(([name, group]) => (
+          <div className="customize-group" key={name}>
+            {groups.length > 1 ? <p className="customize-group-label">{name}</p> : null}
+            <fieldset>
+              <legend className="visually-hidden">{groups.length > 1 ? name : `Options for ${item.name}`}</legend>
+              {group.map((option) => (
+                <label key={option.id}>
+                  <input
+                    type="checkbox"
+                    checked={included.has(option.id)}
+                    onChange={() => toggle(option.id)}
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </fieldset>
+          </div>
+        ))}
         <div className="customize-actions">
           <button type="button" className="menu-text-button" onClick={onClose}>Cancel</button>
           <button type="button" className="menu-add" onClick={save}>

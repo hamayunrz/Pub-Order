@@ -1,6 +1,6 @@
 // Menu page tests for browsing and building a cart with the full menu.
 // Loading, search, checkout review, and unavailable items are covered in Menu.test.jsx.
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CART_STORAGE_KEY, MAX_SWIPES } from './cart.js';
@@ -276,5 +276,46 @@ describe('Header and navigation', () => {
     await user.click(screen.getByRole('link', { name: 'Skip to menu' }));
 
     expect(screen.getByRole('main')).toHaveFocus();
+  });
+});
+
+describe('Customizing a grill item', () => {
+  function openCustomize(user, name) {
+    const card = screen.getByRole('article', { name });
+    return user.click(within(card).getByRole('button', { name: 'Customize' }));
+  }
+
+  it('gives burgers toppings and chicken its own sauces', async () => {
+    const { user } = await setup();
+
+    await openCustomize(user, 'Pub Burger');
+
+    expect(screen.getByRole('checkbox', { name: 'Onion' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Cheese' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Ketchup' })).not.toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: 'Ranch' })).not.toBeInTheDocument();
+    expect(within(screen.getByRole('article', { name: 'Straight Cut Fries' })).queryByRole('button', { name: 'Customize' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await openCustomize(user, 'Chicken Tenders');
+
+    expect(screen.getByRole('checkbox', { name: 'Ranch' })).not.toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: 'Onion' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Cheese' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Ranch' }));
+    await user.click(screen.getByRole('button', { name: 'Add with these options' }));
+
+    expect(screen.getByText('Ranch')).toBeInTheDocument();
+  });
+
+  it('keeps tartar sauce on the cod unless it is unchecked', async () => {
+    const { user } = await setup();
+
+    await openCustomize(user, 'Fried Cod w/ Tartar Sauce');
+
+    expect(screen.getByRole('checkbox', { name: 'Tartar sauce' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Malt vinegar' })).not.toBeChecked();
+    expect(screen.queryByRole('checkbox', { name: 'Pickles' })).not.toBeInTheDocument();
   });
 });

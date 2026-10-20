@@ -132,7 +132,7 @@ def place_order(
         "p_items": [{
             "id": item.id,
             "quantity": item.quantity,
-            "customization": customization_text(item.customizations),
+            "customization": customization_text(item.id, item.customizations),
         } for item in order.items],
     }
     try:

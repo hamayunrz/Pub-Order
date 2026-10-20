@@ -241,4 +241,14 @@ describe('customizations', () => {
     expect(setQuantity(cart, 'pub-burger', 0, menu).customizations).toEqual({});
     expect(restoreCart(JSON.stringify(cart)).customizations).toEqual({ 'pub-burger': ['no-onion'] });
   });
+
+  test('each grill item keeps only its own options', () => {
+    const tenders = menu.find((item) => item.id === 'chicken-tenders');
+    const cart = setQuantity(emptyCart(), 'chicken-tenders', 1, menu);
+    const customized = setCustomizations(cart, tenders, ['ranch', 'no-onion', 'honey-mustard']);
+    expect(customized.customizations['chicken-tenders']).toEqual(['honey-mustard', 'ranch']);
+    expect(getCartSummary(customized, menu).items[0].customization).toBe('Honey mustard, Ranch');
+    const saved = { ...customized, customizations: { 'chicken-tenders': ['no-onion', 'ranch'] } };
+    expect(restoreCart(JSON.stringify(saved)).customizations).toEqual({ 'chicken-tenders': ['ranch'] });
+  });
 });

@@ -139,6 +139,12 @@ def test_place_order_saves_and_returns_the_order(client, menu_database, database
     })]
 
 
+def test_a_sauce_is_saved_only_for_the_item_that_offers_it():
+    assert orders.customization_text("chicken-tenders", ["ranch", "no-onion"]) == "Ranch"
+    assert orders.customization_text("pub-burger", ["no-cheese", "no-onion", "ketchup"]) == "No cheese, No onion, Ketchup"
+    assert orders.customization_text("beyond-burger-patty", ["ranch", "lettuce"]) == "Lettuce"
+
+
 def test_unchecked_ingredients_are_saved_as_no_labels(client, menu_database, database, signed_in):
     database.rows[0]["order_items"][1]["customization"] = "No onion, No tomato"
     body = meal()
