@@ -122,17 +122,34 @@ def test_place_order_saves_and_returns_the_order(client, menu_database, database
     assert response.json() == {
         "id": ORDER_ID, "status": "Received", "swipes": 1, "createdAt": "2026-10-19T12:00:00+00:00",
         "items": [
-            {"id": "burger", "name": "Burger", "swipeType": "Entry", "quantity": 1},
-            {"id": "fries", "name": "Fries", "swipeType": "Side", "quantity": 1},
-            {"id": "tea", "name": "Tea", "swipeType": "Drink", "quantity": 1},
+            {"id": "burger", "name": "Burger", "swipeType": "Entry", "quantity": 1, "customization": ""},
+            {"id": "fries", "name": "Fries", "swipeType": "Side", "quantity": 1, "customization": ""},
+            {"id": "tea", "name": "Tea", "swipeType": "Drink", "quantity": 1, "customization": ""},
         ],
     }
     assert database.tokens == ["test-token"]
     assert database.rpc_calls == [("place_order", {
         "p_idempotency_key": KEY,
         "p_swipes": 1,
-        "p_items": [{"id": "burger", "quantity": 1}, {"id": "fries", "quantity": 1}, {"id": "tea", "quantity": 1}],
+        "p_items": [
+            {"id": "burger", "quantity": 1, "customization": ""},
+            {"id": "fries", "quantity": 1, "customization": ""},
+            {"id": "tea", "quantity": 1, "customization": ""},
+        ],
     })]
+
+
+def test_unchecked_ingredients_are_saved_as_no_labels(client, menu_database, database, signed_in):
+    database.rows[0]["order_items"][1]["customization"] = "No onion, No tomato"
+    body = meal()
+    body["items"][0]["customizations"] = ["no-onion", "no-tomato", "not-an-option"]
+
+    response = client.post("/orders", json=body, headers=HEADERS)
+
+    assert response.status_code == 201
+    assert response.json()["items"][0]["customization"] == "No onion, No tomato"
+    assert database.rpc_calls[0][1]["p_items"][0]["customization"] == "No onion, No tomato"
+    assert database.rpc_calls[0][1]["p_items"][1]["customization"] == ""
 
 
 def test_meal_needing_review_is_not_saved(client, menu_database, catalog, database, signed_in):

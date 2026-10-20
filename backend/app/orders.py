@@ -18,11 +18,12 @@ from pydantic import ConfigDict
 
 from app.auth import bearer, get_current_user
 from app.config import get_settings
+from app.customizations import customization_text
 from app.menu import CheckoutRequest, review_cart
 
 router = APIRouter()
 
-ORDER_COLUMNS = "id,status,swipes,created_at,order_items(menu_item_id,name,swipe_type,quantity)"
+ORDER_COLUMNS = "id,status,swipes,created_at,order_items(menu_item_id,name,swipe_type,quantity,customization)"
 TYPE_ORDER = ["Entry", "Side", "Drink"]
 INVALID_ORDER = "22023"  # errcode raised by place_order() for a meal it won't accept
 
@@ -63,7 +64,7 @@ def order_json(row: dict[str, Any]) -> dict[str, Any]:
         "createdAt": row["created_at"],
         "items": [
             {"id": item["menu_item_id"], "name": item["name"], "swipeType": item["swipe_type"],
-             "quantity": item["quantity"]}
+             "quantity": item["quantity"], "customization": item.get("customization") or ""}
             for item in items
         ],
     }
@@ -98,7 +99,11 @@ def place_order(
     params: Any = {
         "p_idempotency_key": str(order.idempotencyKey),
         "p_swipes": order.swipes,
-        "p_items": [{"id": item.id, "quantity": item.quantity} for item in order.items],
+        "p_items": [{
+            "id": item.id,
+            "quantity": item.quantity,
+            "customization": customization_text(item.customizations),
+        } for item in order.items],
     }
     try:
         order_id = db.rpc("place_order", params).execute().data

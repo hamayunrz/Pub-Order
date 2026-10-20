@@ -1,10 +1,10 @@
 import { useEffect, useId, useState } from 'react';
-import { optionsFor } from './customizations.js';
+import { includedOptionIds, optionsFor } from './customizations.js';
 
 export default function CustomizeDialog({ item, selected, inCart, onClose, onSave }) {
   const titleId = useId();
   const options = optionsFor(item);
-  const [chosen, setChosen] = useState(() => new Set(selected));
+  const [included, setIncluded] = useState(() => new Set(includedOptionIds(item, selected)));
 
   useEffect(() => {
     function onKey(event) {
@@ -15,12 +15,16 @@ export default function CustomizeDialog({ item, selected, inCart, onClose, onSav
   }, [onClose]);
 
   function toggle(id) {
-    setChosen((current) => {
+    setIncluded((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  }
+
+  function save() {
+    onSave(options.filter((option) => !included.has(option.id)).map((option) => option.id));
   }
 
   return (
@@ -33,14 +37,14 @@ export default function CustomizeDialog({ item, selected, inCart, onClose, onSav
         onMouseDown={(event) => event.stopPropagation()}
       >
         <h2 id={titleId}>Customize {item.name}</h2>
-        <p>Choose any options, then {inCart ? 'save them on this cart item' : 'add the item to your cart'}.</p>
+        <p>Everything starts included. Uncheck anything you want left off, then {inCart ? 'save this cart item' : 'add it to your cart'}.</p>
         <fieldset>
           <legend className="visually-hidden">Options for {item.name}</legend>
           {options.map((option) => (
             <label key={option.id}>
               <input
                 type="checkbox"
-                checked={chosen.has(option.id)}
+                checked={included.has(option.id)}
                 onChange={() => toggle(option.id)}
               />
               {option.label}
@@ -49,7 +53,7 @@ export default function CustomizeDialog({ item, selected, inCart, onClose, onSav
         </fieldset>
         <div className="customize-actions">
           <button type="button" className="menu-text-button" onClick={onClose}>Cancel</button>
-          <button type="button" className="menu-add" onClick={() => onSave([...chosen])}>
+          <button type="button" className="menu-add" onClick={save}>
             {inCart ? 'Save customization' : 'Add with these options'}
           </button>
         </div>

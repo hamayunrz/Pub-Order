@@ -153,7 +153,7 @@ export default function Menu({ email, onBack }) {
         {placedOrder ? <section className="order-received" aria-labelledby="order-received-title">
           <h2 id="order-received-title">Order received</h2>
           <p>Order <strong>#{placedOrder.id.slice(0, 8)}</strong> · {placedOrder.status} · {placedOrder.swipes} meal {placedOrder.swipes === 1 ? 'swipe' : 'swipes'}</p>
-          <p>{placedOrder.items.map((item) => `${item.name} × ${item.quantity}`).join(', ')}</p>
+          <p>{placedOrder.items.map((item) => `${item.name} × ${item.quantity}${item.customization ? ` (${item.customization})` : ''}`).join(', ')}</p>
           <button className="menu-text-button" onClick={() => setPlacedOrder(null)}>Dismiss</button>
         </section> : null}
 

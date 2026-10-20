@@ -1,25 +1,13 @@
 const GROUPS = {
   'Grill Main': [
-    { id: 'no-onion', label: 'No onion' },
-    { id: 'no-tomato', label: 'No tomato' },
-    { id: 'extra-pickles', label: 'Extra pickles' },
-    { id: 'add-cheese', label: 'Add cheese' },
-  ],
-  'Grill Side': [
-    { id: 'no-salt', label: 'No salt' },
-    { id: 'side-sauce', label: 'Side of sauce' },
-  ],
-  Beverages: [
-    { id: 'no-ice', label: 'No ice' },
-    { id: 'light-ice', label: 'Light ice' },
-  ],
-  Milkshakes: [
-    { id: 'no-whip', label: 'No whipped cream' },
-    { id: 'extra-whip', label: 'Extra whipped cream' },
+    { id: 'no-onion', label: 'Onion', removed: 'No onion' },
+    { id: 'no-tomato', label: 'Tomato', removed: 'No tomato' },
+    { id: 'no-pickles', label: 'Pickles', removed: 'No pickles' },
+    { id: 'no-cheese', label: 'Cheese', removed: 'No cheese' },
   ],
 };
 
-const LABELS = new Map(Object.values(GROUPS).flat().map((option) => [option.id, option.label]));
+const OPTIONS = new Map(Object.values(GROUPS).flat().map((option) => [option.id, option]));
 
 export function optionsFor(item) {
   return GROUPS[item?.category] || [];
@@ -30,9 +18,14 @@ export function allowedOptionIds(item) {
 }
 
 export function isOptionId(id) {
-  return LABELS.has(id);
+  return OPTIONS.has(id);
+}
+
+export function includedOptionIds(item, removedIds) {
+  const removed = new Set(removedIds || []);
+  return optionsFor(item).filter((option) => !removed.has(option.id)).map((option) => option.id);
 }
 
 export function customizationText(optionIds) {
-  return (optionIds || []).map((id) => LABELS.get(id)).filter(Boolean).join(', ');
+  return (optionIds || []).map((id) => OPTIONS.get(id)?.removed).filter(Boolean).join(', ');
 }

@@ -46,6 +46,7 @@ class CheckoutItem(BaseModel):
     id: Annotated[str, Field(min_length=1, max_length=100)]
     quantity: StrictQuantity
     expectedSwipeType: SwipeType
+    customizations: Annotated[list[Annotated[str, Field(max_length=40)]], Field(max_length=8)] = []
 
 
 class CheckoutRequest(BaseModel):

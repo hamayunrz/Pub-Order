@@ -20,9 +20,16 @@ async function accessToken() {
 }
 
 function cartItems(cart, catalog) {
-  return Object.entries(cart.items).map(([id, quantity]) => ({ id, quantity,
-    expectedSwipeType: cart.reviewedTypes?.[id] || catalog.find((item) => item.id === id)?.swipeType,
-  }));
+  return Object.entries(cart.items).map(([id, quantity]) => {
+    const item = {
+      id,
+      quantity,
+      expectedSwipeType: cart.reviewedTypes?.[id] || catalog.find((menuItem) => menuItem.id === id)?.swipeType,
+    };
+    const customizations = cart.customizations?.[id] || [];
+    if (customizations.length > 0) item.customizations = customizations;
+    return item;
+  });
 }
 
 function postJson(url, token, body) {

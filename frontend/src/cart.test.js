@@ -225,9 +225,9 @@ describe('customizations', () => {
 
   test('options are stored on a cart item and shown in the summary', () => {
     const cart = setQuantity(emptyCart(), 'pub-burger', 1, menu);
-    const customized = setCustomizations(cart, burger, ['add-cheese', 'no-onion', 'not-an-option']);
-    expect(customized.customizations['pub-burger']).toEqual(['add-cheese', 'no-onion']);
-    expect(getCartSummary(customized, menu).items[0].customization).toBe('Add cheese, No onion');
+    const customized = setCustomizations(cart, burger, ['no-cheese', 'no-onion', 'not-an-option']);
+    expect(customized.customizations['pub-burger']).toEqual(['no-cheese', 'no-onion']);
+    expect(getCartSummary(customized, menu).items[0].customization).toBe('No cheese, No onion');
     expect(customized).not.toHaveProperty('checkoutKey');
   });
 
