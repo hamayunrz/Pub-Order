@@ -6,7 +6,7 @@ student, so row-level security applies."""
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Annotated, Any, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,15 +14,16 @@ from fastapi.security import HTTPAuthorizationCredentials
 from postgrest import SyncPostgrestClient
 from postgrest.constants import DEFAULT_POSTGREST_CLIENT_HEADERS
 from postgrest.exceptions import APIError
-from pydantic import ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth import bearer, get_current_user
 from app.config import get_settings
+from app.customizations import customization_text
 from app.menu import CheckoutRequest, review_cart
 
 router = APIRouter()
 
-ORDER_COLUMNS = "id,status,swipes,created_at,order_items(menu_item_id,name,swipe_type,quantity)"
+ORDER_COLUMNS = "id,status,swipes,created_at,order_items(menu_item_id,name,swipe_type,quantity,customization)"
 TYPE_ORDER = ["Entry", "Side", "Drink"]
 INVALID_ORDER = "22023"  # errcode raised by place_order() for a meal it won't accept
 
@@ -30,6 +31,16 @@ INVALID_ORDER = "22023"  # errcode raised by place_order() for a meal it won't a
 class PlaceOrderRequest(CheckoutRequest):
     model_config = ConfigDict(extra="forbid")
     idempotencyKey: UUID
+
+
+class OrderStatusUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["Received", "Preparing", "Ready", "Collected"]
+
+
+class AvailabilityUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    available: bool
 
 
 def user_client(token: str) -> SyncPostgrestClient:
@@ -51,6 +62,26 @@ def access_token(credentials: HTTPAuthorizationCredentials | None) -> str:
     return credentials.credentials
 
 
+def fetch_role(token: str, user_id: str) -> str:
+    """The account's role. A missing profile is a student; only the profiles table can say kitchen."""
+    try:
+        rows = cast(
+            list[dict[str, Any]],
+            user_client(token).from_("profiles").select("role").eq("user_id", user_id).execute().data,
+        )
+    except APIError as exc:
+        # The role table is added by migration. Until that runs, every account stays a student.
+        if exc.code in {"42P01", "PGRST205"}:
+            return "student"
+        raise
+    return "kitchen" if rows and rows[0].get("role") == "kitchen" else "student"
+
+
+def require_kitchen(token: str, user_id: str) -> None:
+    if fetch_role(token, user_id) != "kitchen":
+        raise HTTPException(403, "Kitchen access required.")
+
+
 def order_json(row: dict[str, Any]) -> dict[str, Any]:
     items = sorted(
         row.get("order_items") or [],
@@ -63,7 +94,7 @@ def order_json(row: dict[str, Any]) -> dict[str, Any]:
         "createdAt": row["created_at"],
         "items": [
             {"id": item["menu_item_id"], "name": item["name"], "swipeType": item["swipe_type"],
-             "quantity": item["quantity"]}
+             "quantity": item["quantity"], "customization": item.get("customization") or ""}
             for item in items
         ],
     }
@@ -98,7 +129,11 @@ def place_order(
     params: Any = {
         "p_idempotency_key": str(order.idempotencyKey),
         "p_swipes": order.swipes,
-        "p_items": [{"id": item.id, "quantity": item.quantity} for item in order.items],
+        "p_items": [{
+            "id": item.id,
+            "quantity": item.quantity,
+            "customization": customization_text(item.id, item.customizations),
+        } for item in order.items],
     }
     try:
         order_id = db.rpc("place_order", params).execute().data
@@ -150,3 +185,61 @@ def read_order(
     if saved is None:
         raise HTTPException(404, "Order not found.")
     return saved
+
+
+@router.patch("/orders/{order_id}")
+def update_order_status(
+    order_id: UUID,
+    change: OrderStatusUpdate,
+    user=Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """Move any order to a new status. Students cannot call this; the database checks again."""
+    token = access_token(credentials)
+    db = user_client(token)
+    try:
+        require_kitchen(token, str(user.id))
+        db.rpc("set_order_status", {"p_order_id": str(order_id), "p_status": change.status}).execute()
+        saved = fetch_order(db, str(order_id))
+    except APIError as exc:
+        if exc.code == "42501":
+            raise HTTPException(403, "Kitchen access required.") from exc
+        if exc.code == "P0002":
+            raise HTTPException(404, "Order not found.") from exc
+        if exc.code == "22023":
+            raise HTTPException(422, "That status is not allowed.") from exc
+        raise HTTPException(503, "Could not update this order. Please try again.") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "Could not update this order. Please try again.") from exc
+    if saved is None:
+        raise HTTPException(404, "Order not found.")
+    return saved
+
+
+@router.patch("/menu/{item_id}")
+def update_item_availability(
+    item_id: Annotated[str, Field(min_length=1, max_length=100)],
+    change: AvailabilityUpdate,
+    user=Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """Mark a menu item sold out or available. Students cannot call this."""
+    token = access_token(credentials)
+    db = user_client(token)
+    try:
+        require_kitchen(token, str(user.id))
+        params: Any = {"p_id": item_id, "p_available": change.available}
+        db.rpc("set_item_availability", params).execute()
+    except APIError as exc:
+        if exc.code == "42501":
+            raise HTTPException(403, "Kitchen access required.") from exc
+        if exc.code == "P0002":
+            raise HTTPException(404, "Menu item not found.") from exc
+        raise HTTPException(503, "Could not update this item. Please try again.") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "Could not update this item. Please try again.") from exc
+    return {"id": item_id, "available": change.available}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { MENU_ITEMS } from './menu-data.js';
-import { filterMenu, getCartSummary, MAX_SWIPES, restoreCart, setQuantity, setSwipes, checkoutErrors, emptyCart, withCheckoutKey } from './cart.js';
+import { filterMenu, getCartSummary, MAX_SWIPES, restoreCart, setCustomizations, setQuantity, setSwipes, checkoutErrors, emptyCart, withCheckoutKey } from './cart.js';
 const menu = MENU_ITEMS.map((item) => ({ ...item, available: true }));
 const meal = () => ({ swipes: 1, items: { 'pub-burger': 1, 'straight-cut-fries': 1, 'sweet-tea': 1 }, reviewedTypes: {} });
 
@@ -43,7 +43,7 @@ test('invalid quantities and unknown or unavailable items are rejected', () => {
 });
 test('cart restoration retains removed IDs and original reviewed types', () => {
   const cart = { swipes: 2, items: { removed: 1 }, reviewedTypes: { removed: 'Drink' } };
-  expect(restoreCart(JSON.stringify(cart))).toEqual(cart);
+  expect(restoreCart(JSON.stringify(cart))).toEqual({ ...cart, customizations: {} });
   expect(getCartSummary(cart, []).items[0].available).toBe(false);
 });
 test('corrupt storage and invalid shapes return a fresh cart', () => {
@@ -217,5 +217,38 @@ describe('checkout key', () => {
     const keyed = { ...cartWith(1, { 'pub-burger': 1 }), checkoutKey: KEY };
     expect(setQuantity(keyed, 'chicken-tenders', 1, menu)).toBe(keyed);
     expect(setSwipes(keyed, 0, menu)).toBe(keyed);
+  });
+});
+
+describe('customizations', () => {
+  const burger = { id: 'pub-burger', name: 'Pub Burger', category: 'Grill Main', swipeType: 'Entry', available: true };
+
+  test('options are stored on a cart item and shown in the summary', () => {
+    const cart = setQuantity(emptyCart(), 'pub-burger', 1, menu);
+    const customized = setCustomizations(cart, burger, ['no-cheese', 'no-onion', 'not-an-option']);
+    expect(customized.customizations['pub-burger']).toEqual(['no-cheese', 'no-onion']);
+    expect(getCartSummary(customized, menu).items[0].customization).toBe('No cheese, No onion');
+    expect(customized).not.toHaveProperty('checkoutKey');
+  });
+
+  test('the same options do not change the cart', () => {
+    const cart = setCustomizations(setQuantity(emptyCart(), 'pub-burger', 1, menu), burger, ['no-onion']);
+    expect(setCustomizations(cart, burger, ['no-onion'])).toBe(cart);
+  });
+
+  test('removing an item drops its customization, and a saved one restores', () => {
+    const cart = setCustomizations(setQuantity(emptyCart(), 'pub-burger', 1, menu), burger, ['no-onion']);
+    expect(setQuantity(cart, 'pub-burger', 0, menu).customizations).toEqual({});
+    expect(restoreCart(JSON.stringify(cart)).customizations).toEqual({ 'pub-burger': ['no-onion'] });
+  });
+
+  test('each grill item keeps only its own options', () => {
+    const tenders = menu.find((item) => item.id === 'chicken-tenders');
+    const cart = setQuantity(emptyCart(), 'chicken-tenders', 1, menu);
+    const customized = setCustomizations(cart, tenders, ['ranch', 'no-onion', 'honey-mustard']);
+    expect(customized.customizations['chicken-tenders']).toEqual(['honey-mustard', 'ranch']);
+    expect(getCartSummary(customized, menu).items[0].customization).toBe('Honey mustard, Ranch');
+    const saved = { ...customized, customizations: { 'chicken-tenders': ['no-onion', 'ranch'] } };
+    expect(restoreCart(JSON.stringify(saved)).customizations).toEqual({ 'chicken-tenders': ['ranch'] });
   });
 });

@@ -15,7 +15,7 @@ export default function Checkout({ cart, catalog, onBack, onSignIn, onAcceptChan
   const errors = checkoutErrors(cart, catalog);
   useEffect(() => () => { activeRequest.current += 1; }, []);
   // Adding a checkout key doesn't change the meal, so it must not reset the review.
-  const meal = JSON.stringify([cart.swipes, cart.items, cart.reviewedTypes]);
+  const meal = JSON.stringify([cart.swipes, cart.items, cart.reviewedTypes, cart.customizations]);
   useEffect(() => {
     activeRequest.current += 1;
     setResult(null); setError(''); setChecking(false); setSignInRequired(false); setPlacing(false);
@@ -66,7 +66,7 @@ export default function Checkout({ cart, catalog, onBack, onSignIn, onAcceptChan
     <h2 id="checkout-title" ref={heading} tabIndex={-1}>Review your meal</h2>
     <p>Each meal swipe includes one entrée, one side, and one drink.</p>
     <ul className="menu-cart-items">
-      {summary.items.map((item) => <li key={item.id}><strong>{item.name}</strong><span> × {item.quantity} · {item.swipeType}</span></li>)}
+      {summary.items.map((item) => <li key={item.id}><strong>{item.name}</strong><span> × {item.quantity} · {item.swipeType}{item.customization ? ` · ${item.customization}` : ''}</span></li>)}
     </ul>
     <div className="menu-subtotal"><span>Total</span><strong>{cart.swipes} meal {cart.swipes === 1 ? 'swipe' : 'swipes'}</strong></div>
     <p>Entries: {summary.counts.Entry} · Sides: {summary.counts.Side} · Drinks: {summary.counts.Drink}</p>

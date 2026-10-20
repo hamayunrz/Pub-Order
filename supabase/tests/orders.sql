@@ -60,6 +60,14 @@ begin
   if (select count(*) from public.order_items where order_id = v_first) <> 3 then
     raise exception 'Expected three stored order items';
   end if;
+  v_first := public.place_order(
+    '00000000-0000-4000-8000-000000000002', 1,
+    '[{"id": "pub-burger", "quantity": 1, "customization": "No onion"}, {"id": "straight-cut-fries", "quantity": 1}, {"id": "sweet-tea", "quantity": 1}]'
+  );
+  if (select customization from public.order_items where order_id = v_first and menu_item_id = 'pub-burger')
+     is distinct from 'No onion' then
+    raise exception 'Customization was not stored on the order item';
+  end if;
   begin
     perform public.place_order(gen_random_uuid(), 1, '[{"id": "pub-burger", "quantity": 1}]');
     raise exception 'An incomplete meal was accepted';

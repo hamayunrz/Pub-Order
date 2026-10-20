@@ -218,6 +218,7 @@ describe('pageFromHash', () => {
     ['', { name: 'login' }],
     ['#menu', { name: 'menu' }],
     ['#orders', { name: 'orders' }],
+    ['#kitchen', { name: 'kitchen' }],
     [`#order/${ID}`, { name: 'order', orderId: ID }],
     ['#order/', { name: 'login' }],
     ['#somewhere', { name: 'login' }],

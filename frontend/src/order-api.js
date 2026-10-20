@@ -43,3 +43,23 @@ export async function loadOrders(signal) {
   if (!Array.isArray(orders) || !orders.every(isOrder)) throw new Error(LIST_FAILED);
   return { orders };
 }
+
+const UPDATE_FAILED = 'Could not update this order. Please try again.';
+
+// Kitchen staff only. Returns { order }, { signInRequired }, { forbidden } or { notFound }.
+export async function updateOrderStatus(orderId, status) {
+  const token = await accessToken();
+  if (!token) return { signInRequired: true };
+  const response = await fetch(`/api/orders/${orderId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+  if (response.status === 401) return { signInRequired: true };
+  if (response.status === 403) return { forbidden: true };
+  if (response.status === 404) return { notFound: true };
+  if (!response.ok) throw new Error(UPDATE_FAILED);
+  const order = await response.json().catch(() => null);
+  if (!isOrder(order) || order.id !== orderId) throw new Error(UPDATE_FAILED);
+  return { order };
+}

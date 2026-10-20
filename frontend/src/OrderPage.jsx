@@ -153,7 +153,7 @@ function OrderDetails({ order, justPlaced, heading, error, checkedAt, refreshing
         <h2 id="order-summary-title">Order summary</h2>
         <ul className="order-receipt-items">
           {order.items.map((item) => <li key={item.id}>
-            <span>{item.name}</span>
+            <span>{item.name}{item.customization ? <span className="order-receipt-note"> · {item.customization}</span> : null}</span>
             <span className="order-receipt-type">{item.swipeType}</span>
             <span className="order-receipt-qty">× {item.quantity}</span>
           </li>)}

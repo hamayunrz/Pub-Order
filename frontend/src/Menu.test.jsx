@@ -57,6 +57,27 @@ it('shows a failed menu request and retries successfully', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Retry menu' }));
   expect(await screen.findByRole('button', { name: 'Add Burger to cart' })).toBeEnabled();
 });
+it('shows a sold-out item after the menu refreshes in the background', async () => {
+  render(<Menu />);
+  const add = await screen.findByRole('button', { name: 'Add Burger to cart' });
+  expect(add).toBeEnabled();
+  fetch.mockImplementation(async (url) => {
+    if (url === '/api/menu') return response(catalog.map((item) => ({ ...item, available: item.id !== 'burger' })));
+    return response(validReview());
+  });
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(await screen.findByRole('button', { name: 'Add Burger to cart' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Add Burger to cart' })).toHaveTextContent('Sold out');
+});
+it('opens a nutrition card from a menu item', async () => {
+  render(<Menu />);
+  await screen.findByRole('button', { name: 'Add Burger to cart' });
+  fireEvent.click(screen.getByRole('button', { name: 'Nutrition facts for Burger' }));
+  expect(screen.getByRole('dialog', { name: 'Burger' })).toBeInTheDocument();
+  expect(screen.getByRole('rowheader', { name: 'Calories' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
 it('rejects malformed menu responses', async () => {
   fetch.mockResolvedValueOnce(response([{ id: 'invalid' }])); render(<Menu />);
   expect(await screen.findByRole('alert')).toHaveTextContent('could not be loaded');
@@ -152,7 +173,7 @@ it('refreshes catalog without dropping a saved cart or its reviewed classificati
   await screen.findByRole('button', { name: 'Add Burger to cart' });
   fetch.mockResolvedValueOnce(response(catalog.map((i) => ({ ...i, available: i.id !== 'burger' }))));
   fireEvent.click(screen.getByRole('button', { name: 'Refresh menu' }));
-  await screen.findByText(/Unavailable — remove before checkout/);
+  await screen.findByText(/Sold out — remove before checkout/);
   expect(JSON.parse(localStorage.getItem(CART_STORAGE_KEY)).items.burger).toBe(1);
   fireEvent.click(screen.getByRole('button', { name: 'Review checkout' }));
   expect(screen.getByRole('button', { name: 'Validate checkout' })).toBeDisabled();

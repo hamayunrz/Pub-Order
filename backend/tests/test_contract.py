@@ -13,24 +13,26 @@ def test_me_route_accepts_get():
     assert "GET" in routes["/me"]
 
 
-def test_me_returns_only_id_and_email(client, fake_auth):
+def test_me_returns_only_id_email_and_role(client, fake_auth, monkeypatch):
     fake_auth.result = SimpleNamespace(
         user=SimpleNamespace(
             id="user-123",
             email="student@vanderbilt.edu",
             phone="+16155550100",
-            user_metadata={"role": "student"},
+            user_metadata={"role": "kitchen"},
         ),
     )
+    monkeypatch.setattr("app.main.fetch_role", lambda token, user_id: "student")
 
     response = client.get("/me", headers={"Authorization": "Bearer token"})
 
     assert response.headers["content-type"] == "application/json"
-    assert response.json() == {"id": "user-123", "email": "student@vanderbilt.edu"}
+    assert response.json() == {"id": "user-123", "email": "student@vanderbilt.edu", "role": "student"}
 
 
-def test_me_returns_id_as_a_string(client, fake_auth):
+def test_me_returns_id_as_a_string(client, fake_auth, monkeypatch):
     fake_auth.result = SimpleNamespace(user=SimpleNamespace(id=42, email="student@vanderbilt.edu"))
+    monkeypatch.setattr("app.main.fetch_role", lambda token, user_id: "student")
 
     response = client.get("/me", headers={"Authorization": "Bearer token"})
 

@@ -68,7 +68,7 @@ function OrderGroup({ title, orders, onOpenOrder }) {
         {orders.map((order) => <li key={order.id} className={`order-row order-row-${order.status.toLowerCase()}`}>
           <div className="order-row-main">
             <strong>Order #{shortOrderId(order.id)}</strong>
-            <span>{order.items.map((item) => `${item.name} × ${item.quantity}`).join(', ')}</span>
+            <span>{order.items.map((item) => `${item.name} × ${item.quantity}${item.customization ? ` (${item.customization})` : ''}`).join(', ')}</span>
             <span className="order-row-meta">{swipeLabel(order.swipes)}{order.createdAt ? ` · ${formatPlacedAt(order.createdAt)}` : ''}</span>
           </div>
           <span className="order-chip">{stepLabel(order.status)}</span>

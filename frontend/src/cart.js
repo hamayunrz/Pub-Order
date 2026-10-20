@@ -1,7 +1,9 @@
+import { allowedOptionIds, customizationText } from './customizations.js';
+
 export const CART_STORAGE_KEY = 'pub-order.sample-cart.v1';
 export const MAX_SWIPES = 10;
 export const SWIPE_TYPES = ['Entry', 'Side', 'Drink'];
-export const emptyCart = () => ({ swipes: 1, items: {}, reviewedTypes: {} });
+export const emptyCart = () => ({ swipes: 1, items: {}, reviewedTypes: {}, customizations: {} });
 const record = (value) => value && typeof value === 'object' && !Array.isArray(value);
 const validQuantity = (value) => Number.isInteger(value) && value >= 1 && value <= MAX_SWIPES;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,10 +28,19 @@ export function restoreCart(serialized) {
     if (!record(value) || !validQuantity(value.swipes) || !record(value.items)) return emptyCart();
     const entries = Object.entries(value.items).filter(([id, quantity]) =>
       id.length > 0 && id.length <= 100 && !['__proto__', 'constructor', 'prototype'].includes(id) && validQuantity(quantity));
+    const itemIds = new Set(entries.map(([id]) => id));
+    const savedOptions = record(value.customizations) ? value.customizations : {};
+    const customizations = Object.fromEntries(Object.entries(savedOptions).flatMap(([id, selected]) => {
+      if (!itemIds.has(id) || !Array.isArray(selected)) return [];
+      const allowed = allowedOptionIds({ id });
+      const options = [...new Set(selected.filter((optionId) => typeof optionId === 'string' && allowed.has(optionId)))].sort();
+      return options.length ? [[id, options]] : [];
+    }));
     return {
       swipes: value.swipes,
       items: Object.fromEntries(entries),
       reviewedTypes: Object.fromEntries(entries.filter(([id]) => SWIPE_TYPES.includes(value.reviewedTypes?.[id])).map(([id]) => [id, value.reviewedTypes[id]])),
+      customizations,
       ...(typeof value.checkoutKey === 'string' && UUID.test(value.checkoutKey) ? { checkoutKey: value.checkoutKey } : {}),
     };
   } catch { return emptyCart(); }
@@ -54,9 +65,10 @@ export function setQuantity(cart, id, quantity, catalog) {
   if (!Number.isInteger(quantity) || quantity < 0 || quantity > MAX_SWIPES) return cart;
   const items = { ...cart.items };
   const reviewedTypes = { ...cart.reviewedTypes };
+  const customizations = { ...(cart.customizations || {}) };
   if (quantity === 0) {
-    delete items[id]; delete reviewedTypes[id];
-    return { ...changed(cart), items, reviewedTypes };
+    delete items[id]; delete reviewedTypes[id]; delete customizations[id];
+    return { ...changed(cart), items, reviewedTypes, customizations };
   }
   const item = catalog.find((candidate) => candidate.id === id);
   if (!item || !item.available) return cart;
@@ -65,12 +77,26 @@ export function setQuantity(cart, id, quantity, catalog) {
   items[id] = quantity;
   // Keep the originally reviewed classification until an explicit acceptance.
   reviewedTypes[id] ??= item.swipeType;
-  return { ...changed(cart), items, reviewedTypes };
+  return { ...changed(cart), items, reviewedTypes, customizations };
+}
+
+export function setCustomizations(cart, item, optionIds) {
+  if (!item || !validQuantity(cart.items?.[item.id])) return cart;
+  const allowed = allowedOptionIds(item);
+  const next = [...new Set((optionIds || []).filter((optionId) => allowed.has(optionId)))].sort();
+  const current = [...(cart.customizations?.[item.id] || [])].sort();
+  if (next.length === current.length && next.every((optionId, index) => optionId === current[index])) return cart;
+  const customizations = { ...(cart.customizations || {}) };
+  if (next.length === 0) delete customizations[item.id];
+  else customizations[item.id] = next;
+  return { ...changed(cart), customizations };
 }
 
 export function getCartSummary(cart, catalog) {
   const items = Object.entries(cart.items).map(([id, quantity]) => ({
-    ...(catalog.find((item) => item.id === id) || { id, name: id, available: false, swipeType: 'Unavailable' }), quantity,
+    ...(catalog.find((item) => item.id === id) || { id, name: id, available: false, swipeType: 'Unavailable' }),
+    quantity,
+    customization: customizationText(cart.customizations?.[id]),
   }));
   return { items, count: items.reduce((sum, item) => sum + item.quantity, 0), counts: countsByType(cart.items, catalog), swipes: cart.swipes };
 }
