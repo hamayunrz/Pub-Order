@@ -200,7 +200,7 @@ describe('Changing the cart', () => {
     expect(screen.getByRole('heading', { name: 'A little hungry?' })).toBeInTheDocument();
     expect(screen.getByText('Cart cleared.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Clear cart' })).not.toBeInTheDocument();
-    expect(savedCart()).toEqual({ swipes: 1, items: {}, reviewedTypes: {} });
+    expect(savedCart()).toEqual({ swipes: 1, items: {}, reviewedTypes: {}, customizations: {} });
   });
 });
 
@@ -210,7 +210,7 @@ describe('Saving the cart', () => {
 
     await user.click(addButton('Pub Burger'));
 
-    expect(savedCart()).toEqual({ swipes: 1, items: { 'pub-burger': 1 }, reviewedTypes: { 'pub-burger': 'Entry' } });
+    expect(savedCart()).toEqual({ swipes: 1, items: { 'pub-burger': 1 }, reviewedTypes: { 'pub-burger': 'Entry' }, customizations: {} });
     expect(screen.getByText(/Cart saved on this browser/)).toBeInTheDocument();
   });
 
