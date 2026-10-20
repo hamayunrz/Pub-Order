@@ -39,7 +39,12 @@ test('a signed-in student places an order and it is saved', async ({ page }) => 
   await page.getByRole('button', { name: 'Place order' }).click();
 
   await expect(page.getByRole('heading', { name: 'Order received' })).toBeVisible();
-  await expect(page.getByText('Chicken Tenders × 1, Pretzel Sticks × 1, Apple Juice × 1')).toBeVisible();
+  const summary = page.getByRole('region', { name: 'Order summary' });
+  await expect(summary.getByText('Chicken Tenders')).toBeVisible();
+  await expect(summary.getByText('Pretzel Sticks')).toBeVisible();
+  await expect(summary.getByText('Apple Juice')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Order something else' }).click();
   await expect(page.getByRole('heading', { name: 'A little hungry?' })).toBeVisible();
 
   await page.reload();
