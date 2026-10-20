@@ -114,5 +114,3 @@
 .checkout-button { width: 100%; margin-top: 20px; }
 .checkout-review .menu-subtotal { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-top: 24px; }
 .checkout-review .menu-subtotal strong { font-size: 24px; text-align: right; }
-.order-received { max-width: 720px; margin: 0 auto 24px; padding: 20px 28px; border: 1px solid var(--line); border-radius: 16px; background: #edf3e9; }
-.order-received h2 { margin: 0 0 8px; }

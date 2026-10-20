@@ -13,7 +13,7 @@ function initialCart() {
   catch { return emptyCart(); }
 }
 
-export default function Menu({ email, onBack }) {
+export default function Menu({ email, onBack, onViewOrders, onOrderPlaced }) {
   const [cart, setCart] = useState(initialCart);
   const [catalog, setCatalog] = useState([]);
   const [loadState, setLoadState] = useState('loading');
@@ -24,7 +24,6 @@ export default function Menu({ email, onBack }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
   const [notice, setNotice] = useState('');
-  const [placedOrder, setPlacedOrder] = useState(null);
   const [customizing, setCustomizing] = useState(null);
   const [canSave, setCanSave] = useState(true);
   const summary = getCartSummary(cart, catalog);
@@ -59,13 +58,13 @@ export default function Menu({ email, onBack }) {
     return keyed;
   }
 
-  // Placeholder confirmation until US4 adds the full order confirmation page.
+  // US4: only a saved order reaches here. Clear the cart, then open the order's confirmation page.
   function orderPlaced(order, checkoutKey) {
     // Preserve a new/edited meal if the student changed it while this order was saving.
     setCart((current) => current.checkoutKey === checkoutKey ? emptyCart() : current);
     setCheckout(false);
-    setPlacedOrder(order);
-    setNotice(`Order received. Your order number is ${order.id.slice(0, 8)}.`);
+    setNotice('');
+    onOrderPlaced?.(order);
   }
 
   function acceptChanges(result) {
@@ -135,6 +134,7 @@ export default function Menu({ email, onBack }) {
         <div className="menu-wordmark">The Pub<span>Vanderbilt · Student project</span></div>
         <div className="menu-header-actions">
           {email ? <span className="menu-account">Signed in as {email}</span> : null}
+          {email && onViewOrders ? <button className="menu-text-button" onClick={onViewOrders}>My orders</button> : null}
           <button className="menu-text-button" onClick={onBack}>{email ? 'Back to login' : 'Sign in'}</button>
           <button className="menu-cart-link" onClick={showCart}>Cart <span>{summary.count}</span></button>
         </div>
@@ -149,13 +149,6 @@ export default function Menu({ email, onBack }) {
           </div>
           <div className="menu-demo-note"><strong>Meal swipe menu</strong><span>Review your meal before ordering. One entrée, side, and drink per swipe.</span></div>
         </section>
-
-        {placedOrder ? <section className="order-received" aria-labelledby="order-received-title">
-          <h2 id="order-received-title">Order received</h2>
-          <p>Order <strong>#{placedOrder.id.slice(0, 8)}</strong> · {placedOrder.status} · {placedOrder.swipes} meal {placedOrder.swipes === 1 ? 'swipe' : 'swipes'}</p>
-          <p>{placedOrder.items.map((item) => `${item.name} × ${item.quantity}${item.customization ? ` (${item.customization})` : ''}`).join(', ')}</p>
-          <button className="menu-text-button" onClick={() => setPlacedOrder(null)}>Dismiss</button>
-        </section> : null}
 
         {checkout ? <Checkout cart={cart} catalog={catalog} onBack={showCart} onSignIn={onBack} onAcceptChanges={acceptChanges} onEnsureCheckoutKey={ensureCheckoutKey} onOrderPlaced={orderPlaced} /> : <div className="menu-layout">
           <section className="menu-catalog" aria-label="Food and drinks">
