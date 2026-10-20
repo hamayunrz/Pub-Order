@@ -1,5 +1,6 @@
 // Kitchen staff see every order and move it between Received, Preparing, Ready, and Collected.
 import { useEffect, useRef, useState } from 'react';
+import { loadMenu, setItemAvailability } from './menu-api.js';
 import PubHeader from './PubHeader.jsx';
 import { loadOrders, updateOrderStatus } from './order-api.js';
 import { ORDER_STATUSES, formatPlacedAt, isOpenOrder, shortOrderId, stepLabel, swipeLabel } from './order-status.js';
@@ -11,11 +12,13 @@ export default function Kitchen({ email, onSignOut }) {
   const [attempt, setAttempt] = useState(0);
   const [savingId, setSavingId] = useState('');
   const [rowError, setRowError] = useState('');
+  const [menu, setMenu] = useState([]);
+  const [menuError, setMenuError] = useState('');
   const heading = useRef(null);
 
   useEffect(() => {
     const controller = new AbortController();
-    setState('loading'); setError('');
+    setState('loading'); setError(''); setMenuError('');
     loadOrders(controller.signal).then((result) => {
       if (controller.signal.aborted) return;
       if (result.signInRequired) { setState('signIn'); return; }
@@ -23,6 +26,11 @@ export default function Kitchen({ email, onSignOut }) {
     }).catch((failure) => {
       if (controller.signal.aborted) return;
       setError(failure.message); setState('error');
+    });
+    loadMenu(controller.signal).then((items) => {
+      if (!controller.signal.aborted) setMenu(items);
+    }).catch((failure) => {
+      if (!controller.signal.aborted) setMenuError(failure.message);
     });
     return () => controller.abort();
   }, [attempt]);
@@ -45,6 +53,22 @@ export default function Kitchen({ email, onSignOut }) {
     }
   }
 
+  async function toggleSoldOut(item) {
+    if (savingId) return;
+    setSavingId(item.id); setRowError('');
+    try {
+      const result = await setItemAvailability(item.id, !item.available);
+      if (result.signInRequired) { setState('signIn'); return; }
+      if (result.forbidden) { setRowError('This account cannot change the menu.'); return; }
+      if (result.notFound) { setRowError('That item is no longer on the menu.'); return; }
+      setMenu((current) => current.map((entry) => (entry.id === result.item.id ? { ...entry, available: result.item.available } : entry)));
+    } catch (failure) {
+      setRowError(failure.message);
+    } finally {
+      setSavingId('');
+    }
+  }
+
   const open = orders.filter(isOpenOrder);
   const collected = orders.filter((order) => !isOpenOrder(order));
 
@@ -57,7 +81,7 @@ export default function Kitchen({ email, onSignOut }) {
         <section className="order-hero">
           <p className="menu-eyebrow">Kitchen</p>
           <h1 ref={heading} tabIndex={-1}>Orders</h1>
-          <p>Every order is listed here. Choose a status to update it.</p>
+          <p>Update an order’s status, or mark a menu item sold out so students cannot order it.</p>
         </section>
 
         {state === 'loading' && <p role="status">Loading orders…</p>}
@@ -69,9 +93,36 @@ export default function Kitchen({ email, onSignOut }) {
         {state === 'ready' && orders.length === 0 && <div className="order-message"><p>No orders yet.</p></div>}
         {state === 'ready' && open.length > 0 && <OrderGroup title="Open" orders={open} savingId={savingId} onChangeStatus={changeStatus} />}
         {state === 'ready' && collected.length > 0 && <OrderGroup title="Collected" orders={collected} savingId={savingId} onChangeStatus={changeStatus} />}
+        {menuError && <p className="order-refresh-error" role="alert">{menuError}</p>}
+        {menu.length > 0 && <MenuStock items={menu} savingId={savingId} onToggle={toggleSoldOut} />}
         {rowError && <p className="order-refresh-error" role="alert">{rowError}</p>}
       </main>
     </div>
+  );
+}
+
+function MenuStock({ items, savingId, onToggle }) {
+  return (
+    <section className="order-group" aria-labelledby="kitchen-menu">
+      <h2 id="kitchen-menu">Menu</h2>
+      <ul className="order-list">
+        {items.map((item) => <li key={item.id} className="order-row">
+          <div className="order-row-main">
+            <strong>{item.name}</strong>
+            <span className="order-row-meta">{item.category} · {item.swipeType}</span>
+          </div>
+          <button
+            type="button"
+            className="menu-add"
+            aria-pressed={!item.available}
+            disabled={Boolean(savingId)}
+            onClick={() => onToggle(item)}
+          >
+            {item.available ? 'Mark sold out' : 'Sold out'}
+          </button>
+        </li>)}
+      </ul>
+    </section>
   );
 }
 

@@ -59,6 +59,11 @@ begin
     raise exception 'A missing order was updated';
   exception when no_data_found then null;
   end;
+  perform public.set_item_availability('pub-burger', false);
+  if (select available from public.menu_items where id = 'pub-burger') then
+    raise exception 'Kitchen sold-out change was not stored';
+  end if;
+  perform public.set_item_availability('pub-burger', true);
 end $$;
 
 select set_config('request.jwt.claims', '{"sub": "00000000-0000-4000-8000-00000000000b", "role": "authenticated"}', true);
@@ -67,6 +72,11 @@ begin
   if (select count(*) from public.orders) <> 0 then
     raise exception 'Another student must not see the order';
   end if;
+  begin
+    perform public.set_item_availability('pub-burger', false);
+    raise exception 'A student was allowed to mark an item sold out';
+  exception when insufficient_privilege then null;
+  end;
 end $$;
 
 rollback;

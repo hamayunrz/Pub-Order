@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Checkout from './Checkout.jsx';
 import CustomizeDialog from './CustomizeDialog.jsx';
+import NutritionDialog from './NutritionDialog.jsx';
 import { loadMenu } from './menu-api.js';
 import { optionsFor } from './customizations.js';
 import { CART_STORAGE_KEY, MAX_SWIPES, emptyCart, filterMenu, getCartSummary, restoreCart, setCustomizations, setQuantity, setSwipes, withCheckoutKey } from './cart.js';
@@ -25,6 +26,7 @@ export default function Menu({ email, onBack, onViewOrders, onOrderPlaced }) {
   const [category, setCategory] = useState('All');
   const [notice, setNotice] = useState('');
   const [customizing, setCustomizing] = useState(null);
+  const [details, setDetails] = useState(null);
   const [canSave, setCanSave] = useState(true);
   const summary = getCartSummary(cart, catalog);
   const visibleItems = filterMenu(query, category, catalog);
@@ -40,15 +42,35 @@ export default function Menu({ email, onBack, onViewOrders, onOrderPlaced }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    setLoadState('loading'); setLoadError('');
-    loadMenu(controller.signal).then((items) => {
-      if (controller.signal.aborted) return;
-      setCatalog(items); setLoadState('ready');
-    }).catch((error) => {
-      if (controller.signal.aborted) return;
-      setLoadError(error.message); setLoadState('error');
-    });
-    return () => controller.abort();
+    let background = false;
+
+    async function load() {
+      if (!background) { setLoadState('loading'); setLoadError(''); }
+      try {
+        const items = await loadMenu(controller.signal);
+        if (controller.signal.aborted) return;
+        setCatalog(items);
+        setLoadState('ready');
+      } catch (error) {
+        if (controller.signal.aborted || error.name === 'AbortError') return;
+        if (!background) { setLoadError(error.message); setLoadState('error'); }
+      }
+    }
+
+    load();
+    // Pick up sold-out changes while a student is looking at the menu.
+    const timer = setInterval(() => { background = true; load(); }, 10000);
+    function onVisible() {
+      if (document.hidden) return;
+      background = true;
+      load();
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [attempt]);
 
   // Save the cart's checkout key before submitting, so a retry after a failure reuses it.
@@ -177,7 +199,16 @@ export default function Menu({ email, onBack, onViewOrders, onOrderPlaced }) {
                       />
                     </div>
                     <div className="menu-item-top"><span className="menu-item-category">{item.category}</span>{item.label ? <span className="menu-item-label">{item.label}</span> : null}</div>
-                    <h2 id={`name-${item.id}`}>{item.name}</h2>
+                    <div className="menu-item-heading">
+                      <h2 id={`name-${item.id}`}>{item.name}</h2>
+                      <button type="button" className="menu-info" aria-label={`Nutrition facts for ${item.name}`} onClick={() => setDetails(item)}>
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9" />
+                          <path d="M12 11v6" />
+                          <circle cx="12" cy="8" r="1" />
+                        </svg>
+                      </button>
+                    </div>
                     {item.portion ? <p className="menu-item-portion">{item.portion}</p> : null}
                     {item.description ? <p>{item.description}</p> : null}
                     <div className="menu-item-bottom">
@@ -188,7 +219,7 @@ export default function Menu({ email, onBack, onViewOrders, onOrderPlaced }) {
                         </button>
                       ) : null}
                       <button className="menu-add" aria-label={`Add ${item.name} to cart`} disabled={!item.available || typeFull} onClick={() => addItem(item)}>
-                        {!item.available ? 'Unavailable' : typeFull ? `${item.swipeType} limit reached` : '+ Add'}
+                        {!item.available ? 'Sold out' : typeFull ? `${item.swipeType} limit reached` : '+ Add'}
                         {itemQuantity > 0 && !typeFull ? <span> · {itemQuantity} in cart</span> : null}
                       </button>
                     </div>
@@ -218,7 +249,7 @@ export default function Menu({ email, onBack, onViewOrders, onOrderPlaced }) {
                       <span className="menu-item-swipe-type">{item.swipeType}</span>
                     </div>
                     {item.customization ? <p className="menu-cart-customization">{item.customization}</p> : null}
-                    <p className="menu-cart-item-portion">{item.portion}{loadState === 'ready' && !item.available ? ' Unavailable — remove before checkout.' : ''}</p>
+                    <p className="menu-cart-item-portion">{item.portion}{loadState === 'ready' && !item.available ? ' Sold out — remove before checkout.' : ''}</p>
                     {optionsFor(item).length > 0 ? (
                       <button type="button" className="menu-text-button" onClick={() => setCustomizing(item)}>Customize {item.name}</button>
                     ) : null}
@@ -254,6 +285,7 @@ export default function Menu({ email, onBack, onViewOrders, onOrderPlaced }) {
             onSave={saveCustomization}
           />
         ) : null}
+        {details ? <NutritionDialog item={details} onClose={() => setDetails(null)} /> : null}
       </main>
     </div>
   );

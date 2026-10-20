@@ -65,3 +65,23 @@ export async function placeOrder(cart, catalog) {
   if (!response.ok) throw new Error('Could not place your order. Your cart is still here; please try again.');
   return { order: await response.json() };
 }
+
+// Kitchen staff only. Returns { item }, { signInRequired }, { forbidden } or { notFound }.
+export async function setItemAvailability(itemId, available) {
+  const token = await accessToken();
+  if (!token) return { signInRequired: true };
+  const response = await fetch(`/api/menu/${itemId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ available }),
+  });
+  if (response.status === 401) return { signInRequired: true };
+  if (response.status === 403) return { forbidden: true };
+  if (response.status === 404) return { notFound: true };
+  if (!response.ok) throw new Error('Could not update this item. Please try again.');
+  const item = await response.json().catch(() => null);
+  if (!item || item.id !== itemId || typeof item.available !== 'boolean') {
+    throw new Error('Could not update this item. Please try again.');
+  }
+  return { item };
+}

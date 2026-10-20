@@ -44,7 +44,9 @@ class FakeDatabase:
         if self.mode == "rpc":
             if self.rpc_error is not None:
                 raise self.rpc_error
-            self.row = {**self.row, "status": self.rpc_calls[-1][1]["p_status"]}
+            params = self.rpc_calls[-1][1]
+            if "p_status" in params:
+                self.row = {**self.row, "status": params["p_status"]}
             return SimpleNamespace(data=None)
         return SimpleNamespace(data=[self.row])
 
@@ -100,6 +102,25 @@ def test_missing_order_is_not_found(client, database, signed_in, monkeypatch):
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Order not found."}
+
+
+def test_a_student_cannot_mark_an_item_sold_out(client, database, signed_in, monkeypatch):
+    monkeypatch.setattr(orders, "fetch_role", lambda token, user_id: "student")
+
+    response = client.patch("/menu/pub-burger", json={"available": False}, headers=HEADERS)
+
+    assert response.status_code == 403
+    assert database.rpc_calls == []
+
+
+def test_kitchen_can_mark_an_item_sold_out(client, database, signed_in, monkeypatch):
+    monkeypatch.setattr(orders, "fetch_role", lambda token, user_id: "kitchen")
+
+    response = client.patch("/menu/pub-burger", json={"available": False}, headers=HEADERS)
+
+    assert response.status_code == 200
+    assert response.json() == {"id": "pub-burger", "available": False}
+    assert database.rpc_calls == [("set_item_availability", {"p_id": "pub-burger", "p_available": False})]
 
 
 def test_sign_in_stays_a_student_until_the_role_table_exists(client, fake_auth, monkeypatch):

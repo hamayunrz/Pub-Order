@@ -3,6 +3,7 @@ import path from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { SWIPE_TYPES } from './cart.js';
 import { CATEGORIES, MENU_ITEMS } from './menu-data.js';
+import { hasListedNutrition, nutritionFor } from './nutrition.js';
 
 const imageDir = path.resolve(import.meta.dirname, '../public/images/menu') + path.sep;
 
@@ -32,6 +33,18 @@ describe('menu data', () => {
     expect(new Set(CATEGORIES).size).toBe(CATEGORIES.length);
     for (const category of CATEGORIES.slice(1)) {
       expect(MENU_ITEMS.some((item) => item.category === category), category).toBe(true);
+    }
+  });
+});
+
+describe('nutrition facts', () => {
+  test('every menu item has placeholder facts that can be edited later', () => {
+    for (const item of MENU_ITEMS) {
+      expect(hasListedNutrition(item.id), item.id).toBe(true);
+      const facts = nutritionFor(item);
+      expect(facts.serving, item.id).toBeTruthy();
+      expect(facts.calories, item.id).toEqual(expect.any(Number));
+      expect(facts.protein, item.id).toEqual(expect.any(Number));
     }
   });
 });

@@ -6,7 +6,7 @@ student, so row-level security applies."""
 
 from __future__ import annotations
 
-from typing import Any, Literal, cast
+from typing import Annotated, Any, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,7 +14,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from postgrest import SyncPostgrestClient
 from postgrest.constants import DEFAULT_POSTGREST_CLIENT_HEADERS
 from postgrest.exceptions import APIError
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.auth import bearer, get_current_user
 from app.config import get_settings
@@ -36,6 +36,11 @@ class PlaceOrderRequest(CheckoutRequest):
 class OrderStatusUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Literal["Received", "Preparing", "Ready", "Collected"]
+
+
+class AvailabilityUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    available: bool
 
 
 def user_client(token: str) -> SyncPostgrestClient:
@@ -211,3 +216,30 @@ def update_order_status(
     if saved is None:
         raise HTTPException(404, "Order not found.")
     return saved
+
+
+@router.patch("/menu/{item_id}")
+def update_item_availability(
+    item_id: Annotated[str, Field(min_length=1, max_length=100)],
+    change: AvailabilityUpdate,
+    user=Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+):
+    """Mark a menu item sold out or available. Students cannot call this."""
+    token = access_token(credentials)
+    db = user_client(token)
+    try:
+        require_kitchen(token, str(user.id))
+        params: Any = {"p_id": item_id, "p_available": change.available}
+        db.rpc("set_item_availability", params).execute()
+    except APIError as exc:
+        if exc.code == "42501":
+            raise HTTPException(403, "Kitchen access required.") from exc
+        if exc.code == "P0002":
+            raise HTTPException(404, "Menu item not found.") from exc
+        raise HTTPException(503, "Could not update this item. Please try again.") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "Could not update this item. Please try again.") from exc
+    return {"id": item_id, "available": change.available}
