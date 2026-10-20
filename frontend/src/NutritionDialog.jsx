@@ -36,7 +36,6 @@ export default function NutritionDialog({ item, onClose }) {
             ))}
           </tbody>
         </table>
-        <p className="nutrition-note">These numbers are placeholders and can be replaced later.</p>
         <div className="nutrition-actions">
           <button type="button" className="menu-add" onClick={onClose}>Close</button>
         </div>
