@@ -3,9 +3,9 @@
 This page lists every automated test in the project: where it is and what it checks. For how to run the tests, see [Running tests](../README.md#running-tests) in the README.
 
 **Totals:**
-- **Backend (pytest):** 95 tests: 77 unit, 18 integration
-- **Frontend (Vitest + React Testing Library):** 134 tests: 132 unit and component, 2 integration
-- **E2E (Playwright):** 9 tests
+- **Backend (pytest):** 109 tests: 81 unit, 28 integration
+- **Frontend (Vitest + React Testing Library):** 206 tests: 188 unit and component, 18 integration
+- **E2E (Playwright):** 11 tests
 - **Database (SQL):** two migration check scripts (menu and orders)
 
 Tests marked "×N" run once per input listed.
@@ -32,6 +32,8 @@ GitHub Actions ([.github/workflows/tests.yml](../.github/workflows/tests.yml)) r
 | Database permissions (row-level security, grants) | `test_guest_cannot_change_the_menu`, `menu_items.sql` | Real |
 | App + Login + Menu + cart + browser storage | `signin-flow.integration.test.jsx` | Real components; Supabase and `fetch` faked |
 | FastAPI → database **writes** (orders) | `test_orders_database.py`, `orders.sql` | Real (local Supabase), no mocks |
+| Database status → FastAPI → student (order confirmation and pickup tracking, US4/US6) | `test_order_tracking_database.py`, `order-tracking.spec.js` | Real (local Supabase), no mocks |
+| App + Menu + Checkout + OrderPage + MyOrders + hash routing | `order-tracking.integration.test.jsx` | Real components; Supabase and `fetch` faked |
 
 ## Backend
 
@@ -175,6 +177,19 @@ Marked `integration`. No mocks: orders go through FastAPI, `app/orders.py` and t
 | [`test_guest_cannot_place_an_order`](../backend/tests/integration/test_orders_database.py#L156) | **Failure path:** without a token, 401 and nothing stored. |
 | [`test_student_cannot_insert_an_order_directly`](../backend/tests/integration/test_orders_database.py#L165) | **Failure path:** a student writing to `orders` directly, bypassing the API, is refused. |
 | [`test_database_function_rechecks_the_meal`](../backend/tests/integration/test_orders_database.py#L177) | **Failure path:** the database function itself refuses an incomplete meal (errcode 22023). |
+
+### Integration: order confirmation and pickup tracking: [integration/test_order_tracking_database.py](../backend/tests/integration/test_order_tracking_database.py)
+
+Marked `integration`. No mocks: reads go through FastAPI, real auth and `app/orders.py` into the local Supabase database (US4, US6). A status change is written to the database with the service key, the way a staff update (US5) stores it. Orders created by a test are deleted afterwards.
+
+| Test | What it checks |
+|---|---|
+| [`test_confirmation_reads_back_the_saved_order`](../backend/tests/integration/test_order_tracking_database.py#L69) | **Stored result:** after placing an order, `GET /orders/{id}` returns exactly the saved order, Received, with its three items. |
+| [`test_student_sees_the_latest_stored_status`](../backend/tests/integration/test_order_tracking_database.py#L81) ×3 | After the stored status changes to Preparing, Ready or Collected, both `GET /orders/{id}` and `GET /orders` return it. |
+| [`test_another_student_cannot_track_the_order`](../backend/tests/integration/test_order_tracking_database.py#L92) | **Failure path:** a second student gets 404 "Order not found." for the first student's order. |
+| [`test_student_cannot_change_their_own_order_status`](../backend/tests/integration/test_order_tracking_database.py#L102) | **Failure path:** the database refuses a student's own token updating the status, and it stays Received. |
+| [`test_database_rejects_an_unknown_status`](../backend/tests/integration/test_order_tracking_database.py#L110) | **Failure path:** the database refuses a status outside Received, Preparing, Ready, Collected. |
+| [`test_guest_cannot_track_an_order`](../backend/tests/integration/test_order_tracking_database.py#L118) | **Failure path:** reading one order or the list without a token gives 401. |
 
 ### Integration: real sign-in: [integration/test_supabase_auth.py](../backend/tests/integration/test_supabase_auth.py)
 
@@ -380,13 +395,81 @@ Covers ordering from checkout (US3) with the real Menu, Checkout, cart rules and
 
 | Test | What it checks |
 |---|---|
-| [only offers Place order after a valid review](../frontend/src/place-order.test.jsx#L72) | **Place order** appears only once the server has confirmed the meal. |
-| [sends the meal with the login token and a checkout key, then clears the cart](../frontend/src/place-order.test.jsx#L86) | The request carries the token, the meal and a UUID key; afterwards "Order received" shows and the cart is empty. |
-| [retries a failed attempt with the same checkout key and keeps the cart meanwhile](../frontend/src/place-order.test.jsx#L108) | After a failed attempt the cart and its key are kept, and the retry sends the same key, so it can't create a second order. |
-| [shows the latest review when the menu changed before ordering, and keeps the cart](../frontend/src/place-order.test.jsx#L125) | A 409 re-runs the review and shows what changed; no order is shown and the cart stays. |
-| [asks the student to sign in again when the session expired](../frontend/src/place-order.test.jsx#L141) | A 401 shows **Sign in and keep cart**. |
-| [disables Place order while the order is being saved](../frontend/src/place-order.test.jsx#L151) | The button reads "Placing order…" and can't be clicked twice. |
-| [the confirmation can be dismissed](../frontend/src/place-order.test.jsx#L163) | The "Order received" panel closes with **Dismiss**. |
+| [only offers Place order after a valid review](../frontend/src/place-order.test.jsx#L75) | **Place order** appears only once the server has confirmed the meal. |
+| [sends the meal with the login token and a checkout key, then clears the cart](../frontend/src/place-order.test.jsx#L89) | The request carries the token, the meal and a UUID key; afterwards the saved order is handed to the app (which opens its confirmation page) and the cart is empty. |
+| [retries a failed attempt with the same checkout key and keeps the cart meanwhile](../frontend/src/place-order.test.jsx#L110) | After a failed attempt the cart and its key are kept, and the retry sends the same key, so it can't create a second order. |
+| [shows the latest review when the menu changed before ordering, and keeps the cart](../frontend/src/place-order.test.jsx#L127) | A 409 re-runs the review and shows what changed; no confirmation opens and the cart stays. |
+| [asks the student to sign in again when the session expired](../frontend/src/place-order.test.jsx#L143) | A 401 shows **Sign in and keep cart**. |
+| [disables Place order while the order is being saved](../frontend/src/place-order.test.jsx#L153) | The button reads "Placing order…" and can't be clicked twice. |
+| [opens no confirmation when the order was not saved](../frontend/src/place-order.test.jsx#L165) | A failed save shows the error and never opens a confirmation. |
+| [acknowledges a saved order after Back to cart unmounts checkout](../frontend/src/place-order.test.jsx#L177) | An order that finishes saving after the student left the review still clears the cart and opens its confirmation. |
+| [keeps a newly edited cart when an earlier order finishes saving](../frontend/src/place-order.test.jsx#L188) | A cart changed while the order was saving is kept, not cleared. |
+
+### Order status rules: [order-status.test.js](../frontend/src/order-status.test.js)
+
+Covers [order-status.js](../frontend/src/order-status.js), the rules shared by the confirmation page, pickup tracking and My orders (US4, US6).
+
+| Test | What it checks |
+|---|---|
+| [statusSteps](../frontend/src/order-status.test.js#L14) ×4 | Each of the four steps is marked done, current or upcoming; Collected shows the whole journey done; Ready is labelled "Ready for pickup"; the order matches the database's allowed statuses. |
+| [status wording](../frontend/src/order-status.test.js#L32) ×3 | Every status has a title and a next step; an unknown status falls back to its raw value; "meal swipe(s)" is pluralized. |
+| [order ids](../frontend/src/order-status.test.js#L52) ×2 | Only UUIDs count as order ids, so a mistyped link never reaches the API; the counter number is the first 8 characters in capitals. |
+| [isOpenOrder](../frontend/src/order-status.test.js#L65) | Every status except Collected keeps the page checking for updates. |
+| [isOrder](../frontend/src/order-status.test.js#L73) ×7 | A response shaped like the API's order is accepted; a missing body, bad id, unknown status, zero swipes or bad items are rejected. |
+| [formatPlacedAt](../frontend/src/order-status.test.js#L90) ×3 | "today at …" for today's orders, the date for older ones, nothing for an unreadable time. |
+
+### Reading orders from the API: [order-api.test.js](../frontend/src/order-api.test.js)
+
+Covers [order-api.js](../frontend/src/order-api.js) (US4, US6). Supabase and `fetch` are faked.
+
+| Test | What it checks |
+|---|---|
+| [reads one order with the login token and without the browser cache](../frontend/src/order-api.test.js#L28) | `GET /api/orders/{id}` carries `Bearer <token>` and `cache: no-store`, so a status is never stale. |
+| [treats a malformed id as not found without calling the API](../frontend/src/order-api.test.js#L36) | A non-UUID id is "not found" and no request is made. |
+| [asks a guest to sign in without calling the API](../frontend/src/order-api.test.js#L41) | With no session, it asks for sign-in and makes no request. |
+| [asks for sign-in when Supabase is not configured or the session read fails](../frontend/src/order-api.test.js#L47) | Both cases ask for sign-in. |
+| [asks for sign-in again when the token expired](../frontend/src/order-api.test.js#L54) | A 401 asks for sign-in. |
+| [reports another student's order the same way as a missing one](../frontend/src/order-api.test.js#L59) | A 404 is "not found", whoever owns the order. |
+| [throws a friendly error when the server fails](../frontend/src/order-api.test.js#L64) | A 503 becomes "Could not load your order. Please try again." |
+| [rejects a response that is not the requested order](../frontend/src/order-api.test.js#L69) | A different order's id, or a body that isn't JSON, is treated as a failure. |
+| [lists the student's orders](../frontend/src/order-api.test.js#L78) | `GET /api/orders` returns the list. |
+| [asks a guest or an expired session to sign in](../frontend/src/order-api.test.js#L84) | No session or a 401 asks for sign-in. |
+| [throws when the server fails or sends something that is not a list of orders](../frontend/src/order-api.test.js#L91) | A server error or a malformed list throws a friendly error. |
+
+### Order confirmation and pickup tracking: [OrderPage.test.jsx](../frontend/src/OrderPage.test.jsx)
+
+Covers [OrderPage.jsx](../frontend/src/OrderPage.jsx) (US4, US6). The API module is faked so each test sets what the server returns.
+
+| Test | What it checks |
+|---|---|
+| [shows the just-saved order at once, then re-reads it from the server](../frontend/src/OrderPage.test.jsx#L44) | **US4:** "Order received" with the order number, items, total and Received step, then a fresh read from the server. |
+| [loads the saved order after a refresh, when nothing was passed in](../frontend/src/OrderPage.test.jsx#L58) | **US4:** after a refresh the page loads the order from the server. |
+| [ignores a passed-in order that is not the one in the URL](../frontend/src/OrderPage.test.jsx#L67) | Only the order in the URL is ever shown. |
+| [says an order is missing, including another student's order, without showing it](../frontend/src/OrderPage.test.jsx#L77) | **Failure path:** a 404 shows "We couldn't find that order" and links to My orders. |
+| [asks a signed-out student to sign in](../frontend/src/OrderPage.test.jsx#L87) | A guest is asked to sign in. |
+| [shows a retry when the order cannot be loaded, then recovers](../frontend/src/OrderPage.test.jsx#L96) | **Failure path:** a failed first load shows the error and **Try again**, which recovers. |
+| [sends the student back to the menu or to all orders](../frontend/src/OrderPage.test.jsx#L106) | **Order something else** and **View all my orders** work. |
+| [shows the latest stored status when the student refreshes it](../frontend/src/OrderPage.test.jsx#L119) | **US6:** **Refresh status** shows the new status and announces it to screen readers. |
+| [makes Ready for pickup unmissable, including in the browser tab title](../frontend/src/OrderPage.test.jsx#L131) | **US6:** Ready uses the highlighted panel, says what to do, and sets the tab title. |
+| [restores the tab title when the student leaves the page](../frontend/src/OrderPage.test.jsx#L142) | The tab title goes back afterwards. |
+| [checks for a new status on its own while the order is open](../frontend/src/OrderPage.test.jsx#L153) | **US6:** the page re-reads the order every 15 seconds and shows the new status. |
+| [stops checking once the order has been picked up](../frontend/src/OrderPage.test.jsx#L165) | A Collected order stops polling. |
+| [does not check while the tab is hidden, and checks again when it comes back](../frontend/src/OrderPage.test.jsx#L178) | No requests from a background tab; one as soon as it's visible again. |
+| [keeps the last status on screen when a refresh fails](../frontend/src/OrderPage.test.jsx#L193) | **Failure path:** a failed refresh keeps the last status and says it may be out of date. |
+| [shows the not-found page if the order disappears while open](../frontend/src/OrderPage.test.jsx#L205) | A 404 on refresh switches to not found. |
+| [ignores an older response that arrives after a newer one](../frontend/src/OrderPage.test.jsx#L215) | A slow, older response can't overwrite a newer status. |
+
+### My orders: [MyOrders.test.jsx](../frontend/src/MyOrders.test.jsx)
+
+Covers [MyOrders.jsx](../frontend/src/MyOrders.jsx) (US6). The API module is faked.
+
+| Test | What it checks |
+|---|---|
+| [separates orders still in progress from ones already picked up](../frontend/src/MyOrders.test.jsx#L28) | Orders are grouped into "In progress" and "Picked up" with their status. |
+| [opens an order from the list](../frontend/src/MyOrders.test.jsx#L39) | **View** opens that order. |
+| [points a student with no orders back to the menu](../frontend/src/MyOrders.test.jsx#L48) | An empty list links to the menu. |
+| [asks a signed-out student to sign in](../frontend/src/MyOrders.test.jsx#L57) | A guest is asked to sign in. |
+| [shows the error and loads again on retry or refresh](../frontend/src/MyOrders.test.jsx#L66) | **Failure path:** a failed load shows the error; **Try again** and **Refresh list** reload. |
 
 ### Page switching: [App.test.jsx](../frontend/src/App.test.jsx)
 
@@ -408,6 +491,24 @@ The real App, Login, Menu, cart rules and browser storage working together. Only
 |---|---|
 | [signs in, opens the menu, and keeps the cart across pages](../frontend/src/signin-flow.integration.test.jsx#L51) | Sign in → the menu opens with "Signed in as …" → an added item is saved → going back to login and browsing again shows the same cart. |
 | [stays on the login page when the backend rejects the session](../frontend/src/signin-flow.integration.test.jsx#L71) | If the backend rejects the login, the user stays on the login page and sees the error. |
+
+### Integration: order confirmation and pickup tracking: [order-tracking.integration.test.jsx](../frontend/src/order-tracking.integration.test.jsx)
+
+The real App, Menu, Checkout, OrderPage, MyOrders, cart rules, hash routing and browser storage together (US4, US6). Only Supabase and the FastAPI endpoints are faked, by a small stand-in backend whose stored status a test can change.
+
+| Test | What it checks |
+|---|---|
+| [opens a confirmation page with the saved order and clears the cart](../frontend/src/order-tracking.integration.test.jsx#L91) | **US4:** placing an order opens `#order/<id>` with its number, items, total and Received status, and empties the cart. |
+| [reads the saved order back from the server after a refresh](../frontend/src/order-tracking.integration.test.jsx#L103) | **US4:** a reload re-reads the order from `GET /api/orders/{id}` with the login token. |
+| [does not show another student's order when the id in the URL is changed](../frontend/src/order-tracking.integration.test.jsx#L116) | **Failure path:** changing the id in the URL shows "not found", not someone else's order. |
+| [returns to an empty cart on the menu](../frontend/src/order-tracking.integration.test.jsx#L128) | **Order something else** goes back to the menu with an empty cart. |
+| [shows each new stored status when the student refreshes](../frontend/src/order-tracking.integration.test.jsx#L139) | **US6:** Received → Preparing → Ready for pickup as the stored status changes. |
+| [shows the latest status when the order page is opened fresh](../frontend/src/order-tracking.integration.test.jsx#L152) | **US6:** a reload shows the current status, not the one at order time. |
+| [keeps the last status visible when the server cannot be reached](../frontend/src/order-tracking.integration.test.jsx#L161) | **Failure path:** a server error keeps the last status and shows the error. |
+| [lists the order under My orders and opens it from there](../frontend/src/order-tracking.integration.test.jsx#L171) | **US6:** the order appears under "In progress" with its status, and **View** opens it. |
+| [reaches My orders from the menu header](../frontend/src/order-tracking.integration.test.jsx#L185) | The menu header's **My orders** opens the list. |
+| [sends a signed-out student to sign in, then back to the same order](../frontend/src/order-tracking.integration.test.jsx#L196) | A guest opening an order link signs in and lands back on that order. |
+| [pageFromHash](../frontend/src/order-tracking.integration.test.jsx#L216) ×6 | `#menu`, `#orders` and `#order/<id>` open the right page; anything else is the login page. |
 
 ### Contract with the backend: [vite-config.test.js](../frontend/src/vite-config.test.js)
 
@@ -438,11 +539,13 @@ Location: [frontend/e2e/](../frontend/e2e/). Run with `npm run test:e2e` from `f
 | [an incomplete meal cannot be validated and says what is missing](../frontend/e2e/checkout.spec.js#L29) | An Entry alone shows which parts are missing, and Validate is disabled. |
 | [a student signs in and lands on the menu](../frontend/e2e/sign-in.spec.js#L8) | A real sign-in through Supabase and the backend opens the menu with "Signed in as …". |
 | [a signed-in student builds a meal from the database menu and the server validates it](../frontend/e2e/full-stack.spec.js#L10) | The whole stack with nothing faked: sign in → the 22 menu items load from the database → build a meal → the server confirms it's valid. |
-| [a signed-in student places an order and it is saved](../frontend/e2e/full-stack.spec.js#L28) | Sign in → build a meal → validate → **Place order** → "Order received" with the items → the cart is empty, also after a reload. |
+| [a signed-in student places an order and it is saved](../frontend/e2e/full-stack.spec.js#L28) | Sign in → build a meal → validate → **Place order** → "Order received" with the items → back on the menu the cart is empty, also after a reload. |
+| [a student places an order, reopens its confirmation, and sees when it is ready for pickup](../frontend/e2e/order-tracking.spec.js#L23) | **US4 + US6, nothing faked:** place an order → confirmation → reload reads it back from the database → the stored status is changed to Preparing, then Ready → **Refresh status** shows each → My orders lists it as Ready for pickup. |
+| [a made-up order link shows not found instead of an order](../frontend/e2e/order-tracking.spec.js#L70) | **Failure path:** an order id that isn't the student's shows "We couldn't find that order". |
 
 ## Not covered yet
 
-- **Order confirmation, staff status updates and pickup tracking (US4–US6):** not built yet. They build on `GET /orders/{id}` and the `status` column.
+- **Staff status updates (US5):** not built yet. The US4/US6 tests change the status directly in the database, the way staff updates will store it. Staff reading a student's order (US6 allows owner or staff) depends on the staff role US5 adds.
 - **The "Sign in with SSO" button,** which has no behavior yet.
 - **A network failure when calling `/api/me`.** The page currently shows the browser's raw error text (e.g. "Failed to fetch").
 
