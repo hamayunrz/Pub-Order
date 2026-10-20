@@ -1,22 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { checkoutErrors, getCartSummary } from './cart.js';
-import { reviewCart } from './menu-api.js';
+import { placeOrder, reviewCart } from './menu-api.js';
 
-export default function Checkout({ cart, catalog, onBack, onSignIn, onAcceptChanges }) {
+export default function Checkout({ cart, catalog, onBack, onSignIn, onAcceptChanges, onEnsureCheckoutKey, onOrderPlaced }) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [signInRequired, setSignInRequired] = useState(false);
+  const [placing, setPlacing] = useState(false);
   const activeRequest = useRef(0);
   const heading = useRef(null);
   useEffect(() => { heading.current?.focus(); }, []);
   const summary = getCartSummary(cart, catalog);
   const errors = checkoutErrors(cart, catalog);
   useEffect(() => () => { activeRequest.current += 1; }, []);
+  // Adding a checkout key doesn't change the meal, so it must not reset the review.
+  const meal = JSON.stringify([cart.swipes, cart.items, cart.reviewedTypes]);
   useEffect(() => {
     activeRequest.current += 1;
-    setResult(null); setError(''); setChecking(false); setSignInRequired(false);
-  }, [cart, catalog]);
+    setResult(null); setError(''); setChecking(false); setSignInRequired(false); setPlacing(false);
+  }, [meal, catalog]);
 
   async function validate() {
     if (checking || errors.length) return;
@@ -34,6 +37,31 @@ export default function Checkout({ cart, catalog, onBack, onSignIn, onAcceptChan
     }
   }
 
+  async function submit() {
+    if (placing || !result?.canSubmit) return;
+    const keyed = onEnsureCheckoutKey ? onEnsureCheckoutKey() : cart;
+    const request = ++activeRequest.current;
+    setPlacing(true); setError(''); setSignInRequired(false);
+    try {
+      const outcome = await placeOrder(keyed, catalog);
+      if (outcome.order) {
+        // A saved order must reach Menu even if Back to cart unmounted this review.
+        onOrderPlaced?.(outcome.order, keyed.checkoutKey);
+        return;
+      }
+      if (request !== activeRequest.current) return;
+      // The menu changed since the review: show the latest review so the student can fix the meal.
+      const review = outcome.issues ? await reviewCart(keyed, catalog) : outcome;
+      if (request !== activeRequest.current) return;
+      if (review.signInRequired) setSignInRequired(true);
+      else setResult(review);
+    } catch (failure) {
+      if (request === activeRequest.current) setError(failure.message);
+    } finally {
+      if (request === activeRequest.current) setPlacing(false);
+    }
+  }
+
   return <section className="checkout-review" aria-labelledby="checkout-title">
     <h2 id="checkout-title" ref={heading} tabIndex={-1}>Review your meal</h2>
     <p>Each meal swipe includes one entrée, one side, and one drink.</p>
@@ -46,10 +74,11 @@ export default function Checkout({ cart, catalog, onBack, onSignIn, onAcceptChan
     {error && <p role="alert">{error}</p>}
     {signInRequired && <div role="alert"><p>Sign in to continue. Your cart will stay here.</p><button className="menu-add" onClick={onSignIn}>Sign in and keep cart</button></div>}
     {result?.issues.length > 0 && <div role="alert"><h3>Your meal needs review</h3><ul>{result.issues.map((issue, i) => <li key={i}>{issue.message}</li>)}</ul><button className="menu-add" onClick={() => onAcceptChanges(result)}>Review updated menu</button></div>}
-    {result?.canSubmit && <p role="status">Your meal is valid: {result.swipes} meal {result.swipes === 1 ? 'swipe' : 'swipes'}. No order has been placed. Order submission is not available yet.</p>}
+    {result?.canSubmit && <p role="status">Your meal is valid: {result.swipes} meal {result.swipes === 1 ? 'swipe' : 'swipes'}. Place your order when you're ready.</p>}
     <div className="checkout-actions">
       <button className="menu-text-button" onClick={onBack}>Back to cart</button>
-      <button className="menu-add" disabled={checking || errors.length > 0} onClick={validate}>{checking ? 'Checking latest menu…' : 'Validate checkout'}</button>
+      <button className="menu-add" disabled={checking || placing || errors.length > 0} onClick={validate}>{checking ? 'Checking latest menu…' : 'Validate checkout'}</button>
+      {result?.canSubmit && <button className="menu-add" disabled={placing} onClick={submit}>{placing ? 'Placing order…' : 'Place order'}</button>}
     </div>
   </section>;
 }

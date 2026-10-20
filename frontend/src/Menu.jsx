@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Checkout from './Checkout.jsx';
 import { loadMenu } from './menu-api.js';
-import { CART_STORAGE_KEY, MAX_SWIPES, filterMenu, getCartSummary, restoreCart, setQuantity, setSwipes } from './cart.js';
+import { CART_STORAGE_KEY, MAX_SWIPES, emptyCart, filterMenu, getCartSummary, restoreCart, setQuantity, setSwipes, withCheckoutKey } from './cart.js';
 
 const MENU_IMAGE_BASE = '/images/menu/';
 const IMAGE_FALLBACK = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 300'%3E%3Crect width='400' height='300' fill='%23f2ecdf'/%3E%3Ctext x='50%25' y='50%25' font-family='sans-serif' font-size='18' fill='%23a89f8c' text-anchor='middle' dominant-baseline='middle'%3ENo image%3C/text%3E%3C/svg%3E";
@@ -22,6 +22,7 @@ export default function Menu({ email, onBack }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
   const [notice, setNotice] = useState('');
+  const [placedOrder, setPlacedOrder] = useState(null);
   const [canSave, setCanSave] = useState(true);
   const summary = getCartSummary(cart, catalog);
   const visibleItems = filterMenu(query, category, catalog);
@@ -47,6 +48,22 @@ export default function Menu({ email, onBack }) {
     });
     return () => controller.abort();
   }, [attempt]);
+
+  // Save the cart's checkout key before submitting, so a retry after a failure reuses it.
+  function ensureCheckoutKey() {
+    const keyed = withCheckoutKey(cart);
+    if (keyed !== cart) setCart(keyed);
+    return keyed;
+  }
+
+  // Placeholder confirmation until US4 adds the full order confirmation page.
+  function orderPlaced(order, checkoutKey) {
+    // Preserve a new/edited meal if the student changed it while this order was saving.
+    setCart((current) => current.checkoutKey === checkoutKey ? emptyCart() : current);
+    setCheckout(false);
+    setPlacedOrder(order);
+    setNotice(`Order received. Your order number is ${order.id.slice(0, 8)}.`);
+  }
 
   function acceptChanges(result) {
     // Update only reviewed items; do not erase the rest of the catalog.
@@ -118,7 +135,14 @@ export default function Menu({ email, onBack }) {
           <div className="menu-demo-note"><strong>Meal swipe menu</strong><span>Review your meal before ordering. One entrée, side, and drink per swipe.</span></div>
         </section>
 
-        {checkout ? <Checkout cart={cart} catalog={catalog} onBack={showCart} onSignIn={onBack} onAcceptChanges={acceptChanges} /> : <div className="menu-layout">
+        {placedOrder ? <section className="order-received" aria-labelledby="order-received-title">
+          <h2 id="order-received-title">Order received</h2>
+          <p>Order <strong>#{placedOrder.id.slice(0, 8)}</strong> · {placedOrder.status} · {placedOrder.swipes} meal {placedOrder.swipes === 1 ? 'swipe' : 'swipes'}</p>
+          <p>{placedOrder.items.map((item) => `${item.name} × ${item.quantity}`).join(', ')}</p>
+          <button className="menu-text-button" onClick={() => setPlacedOrder(null)}>Dismiss</button>
+        </section> : null}
+
+        {checkout ? <Checkout cart={cart} catalog={catalog} onBack={showCart} onSignIn={onBack} onAcceptChanges={acceptChanges} onEnsureCheckoutKey={ensureCheckoutKey} onOrderPlaced={orderPlaced} /> : <div className="menu-layout">
           <section className="menu-catalog" aria-label="Food and drinks">
             {loadState === 'ready' && <button className="menu-text-button" onClick={() => setAttempt((n) => n + 1)}>Refresh menu</button>}
             <label className="menu-search-label" htmlFor="menu-search">Find something delicious</label>

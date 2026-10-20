@@ -3,10 +3,10 @@
 This page lists every automated test in the project: where it is and what it checks. For how to run the tests, see [Running tests](../README.md#running-tests) in the README.
 
 **Totals:**
-- **Backend (pytest):** 66 tests: 56 unit, 10 integration
-- **Frontend (Vitest + React Testing Library):** 123 tests: 121 unit and component, 2 integration
-- **E2E (Playwright):** 8 tests
-- **Database (SQL):** one migration check script
+- **Backend (pytest):** 95 tests: 77 unit, 18 integration
+- **Frontend (Vitest + React Testing Library):** 134 tests: 132 unit and component, 2 integration
+- **E2E (Playwright):** 9 tests
+- **Database (SQL):** two migration check scripts (menu and orders)
 
 Tests marked "×N" run once per input listed.
 
@@ -14,7 +14,7 @@ Tests marked "×N" run once per input listed.
 |---|---|---|
 | **Unit and component** | One function or component, with Supabase and `fetch` faked | `backend/tests/`, `frontend/src/*.test.js(x)` |
 | **Integration** | Real pieces working together. Backend integration tests go through the API, real auth and a **real database** (a throwaway local Supabase); frontend integration tests run the real components together with only the outside services faked | `backend/tests/integration/`, `frontend/src/*.integration.test.jsx` |
-| **Database** | The menu migration's data and permissions, checked directly in the local test database | `supabase/tests/menu_items.sql` |
+| **Database** | The menu migration's data and permissions, checked directly in the local test database | `supabase/tests/menu_items.sql`, `supabase/tests/orders.sql` |
 | **E2E** | The real app in a real browser (Chromium). Most journeys answer `/api/menu` with the seed menu; the sign-in and full-stack journeys use the real backend and database | `frontend/e2e/` |
 
 **Integration tests never touch the team's hosted Supabase.** CI starts a throwaway local Supabase with [start-local-supabase.sh](../.github/scripts/start-local-supabase.sh): Postgres, Auth and the REST API in Docker, with `supabase/migrations` applied and a test user created. Without it, the integration tests and the real-backend E2E journeys are skipped locally. In CI, a skipped one counts as a failure (`PUB_ORDER_REQUIRE_INTEGRATION=1`), so a broken setup can't pass quietly.
@@ -31,7 +31,7 @@ GitHub Actions ([.github/workflows/tests.yml](../.github/workflows/tests.yml)) r
 | FastAPI → database (`/menu`, `/checkout/review`) | `test_local_database.py` | Real (local Supabase), no mocks |
 | Database permissions (row-level security, grants) | `test_guest_cannot_change_the_menu`, `menu_items.sql` | Real |
 | App + Login + Menu + cart + browser storage | `signin-flow.integration.test.jsx` | Real components; Supabase and `fetch` faked |
-| FastAPI → database **writes** (orders) | Not yet: order placement (US3) isn't built | — |
+| FastAPI → database **writes** (orders) | `test_orders_database.py`, `orders.sql` | Real (local Supabase), no mocks |
 
 ## Backend
 
@@ -95,6 +95,28 @@ Covers `GET /menu` and `POST /checkout/review` in [app/menu.py](../backend/app/m
 | [`test_review_fails_without_database`](../backend/tests/test_menu_checkout.py#L141) | A database outage during review returns 503. |
 | [`test_extra_client_fields_rejected`](../backend/tests/test_menu_checkout.py#L146) | Extra fields sent by the browser are rejected with 422. |
 
+### Orders: [test_orders.py](../backend/tests/test_orders.py)
+
+Covers `POST /orders`, `GET /orders` and `GET /orders/{id}` in [app/orders.py](../backend/app/orders.py) (US3). The menu and the student's database client are fakes; the integration tests below use the real ones.
+
+| Test | What it checks |
+|---|---|
+| [`test_place_order_saves_and_returns_the_order`](../backend/tests/test_orders.py#L115) | A valid meal calls `place_order` with the student's token, the key and the items, and returns the saved order (201). |
+| [`test_meal_needing_review_is_not_saved`](../backend/tests/test_orders.py#L135) | An unavailable item gives 409 with the issues, and nothing is sent to the database. |
+| [`test_incomplete_meal_is_not_saved`](../backend/tests/test_orders.py#L145) | A meal missing a side and a drink gives 409 with composition issues. |
+| [`test_guest_cannot_place_an_order`](../backend/tests/test_orders.py#L154) | Without a token the request gets 401. |
+| [`test_invalid_requests_are_rejected`](../backend/tests/test_orders.py#L167) ×4 | A missing or malformed checkout key, an extra field, or 11 swipes gives 422. |
+| [`test_database_rejecting_the_meal_becomes_409`](../backend/tests/test_orders.py#L174) | If the database function refuses the meal (the menu changed in between), the student gets 409. |
+| [`test_database_failures_are_sanitized`](../backend/tests/test_orders.py#L187) ×2 | Database and network errors give 503 without leaking details, and say the cart is kept. |
+| [`test_order_that_cannot_be_read_back_is_503`](../backend/tests/test_orders.py#L197) | A saved order that can't be read back gives 503. |
+| [`test_user_client_acts_as_the_student`](../backend/tests/test_orders.py#L205) | Database requests carry the student's token, so row-level security applies. |
+| [`test_lists_the_students_orders_newest_first`](../backend/tests/test_orders.py#L221) | `GET /orders` lists the student's orders, newest first. |
+| [`test_reads_one_of_the_students_orders`](../backend/tests/test_orders.py#L232) | `GET /orders/{id}` returns the order with its items in Entry, Side, Drink order. |
+| [`test_an_order_the_student_cannot_see_is_404`](../backend/tests/test_orders.py#L240) | Someone else's or a missing order gives 404, so existence isn't revealed. |
+| [`test_an_invalid_order_id_is_422`](../backend/tests/test_orders.py#L247) | A malformed id gives 422. |
+| [`test_guest_cannot_read_orders`](../backend/tests/test_orders.py#L252) ×2 | Reading orders without a token gives 401. |
+| [`test_read_failures_are_sanitized`](../backend/tests/test_orders.py#L260) ×2 | Read errors give 503 without leaking details. |
+
 ### Settings: [test_config.py](../backend/tests/test_config.py)
 
 Covers `get_settings` and `Settings` in [app/config.py](../backend/app/config.py).
@@ -138,6 +160,21 @@ Marked `integration`. No mocks: requests go through FastAPI, `get_current_user` 
 | [`test_checkout_review_rejects_guest`](../backend/tests/integration/test_local_database.py#L111) | **Failure path:** without a token, review is refused with 401. |
 | [`test_checkout_review_never_writes_to_the_database`](../backend/tests/integration/test_local_database.py#L117) | The menu table is identical before and after a review. |
 | [`test_guest_cannot_change_the_menu`](../backend/tests/integration/test_local_database.py#L125) | **Failure path:** the database refuses a guest's update, and the row is unchanged. |
+
+### Integration: placing orders: [integration/test_orders_database.py](../backend/tests/integration/test_orders_database.py)
+
+Marked `integration`. No mocks: orders go through FastAPI, `app/orders.py` and the `place_order` database function into the local Supabase database. Orders created by a test are deleted afterwards.
+
+| Test | What it checks |
+|---|---|
+| [`test_placing_an_order_stores_it_in_the_database`](../backend/tests/integration/test_orders_database.py#L92) | **Stored result:** placing an order through the API stores one `orders` row (right student, Received, 1 swipe) and its three `order_items` rows. |
+| [`test_retrying_with_the_same_key_stores_one_order`](../backend/tests/integration/test_orders_database.py#L114) | Submitting twice with the same key returns the same order and stores only one. |
+| [`test_the_student_can_read_and_list_their_order`](../backend/tests/integration/test_orders_database.py#L127) | The student can read the order back and sees it in their list. |
+| [`test_another_student_cannot_read_the_order`](../backend/tests/integration/test_orders_database.py#L137) | **Failure path:** a second student gets 404 and doesn't see it in their list. |
+| [`test_unavailable_item_is_refused_and_nothing_is_stored`](../backend/tests/integration/test_orders_database.py#L146) | **Failure path:** an item made unavailable gives 409 and stores nothing. |
+| [`test_guest_cannot_place_an_order`](../backend/tests/integration/test_orders_database.py#L156) | **Failure path:** without a token, 401 and nothing stored. |
+| [`test_student_cannot_insert_an_order_directly`](../backend/tests/integration/test_orders_database.py#L165) | **Failure path:** a student writing to `orders` directly, bypassing the API, is refused. |
+| [`test_database_function_rechecks_the_meal`](../backend/tests/integration/test_orders_database.py#L177) | **Failure path:** the database function itself refuses an incomplete meal (errcode 22023). |
 
 ### Integration: real sign-in: [integration/test_supabase_auth.py](../backend/tests/integration/test_supabase_auth.py)
 
@@ -205,6 +242,8 @@ Covers [cart.js](../frontend/src/cart.js), which enforces the meal-swipe rules: 
 | [an empty search with a category returns exactly that category](../frontend/src/cart.test.js#L178) | A category filter alone returns only that category. |
 | [a complete two-swipe meal passes review](../frontend/src/cart.test.js#L184) | Two of each part on two swipes has no errors. |
 | [review explains which part of the meal is short](../frontend/src/cart.test.js#L189) | A missing drink produces exactly one clear message. |
+
+The last four cart tests cover the **checkout key**: `withCheckoutKey` adds one UUID and keeps it; a saved key survives a restore but an invalid one is dropped; changing the cart drops the key (it becomes a new order); a rejected change keeps it.
 
 ### Menu data: [menu-data.test.js](../frontend/src/menu-data.test.js)
 
@@ -335,6 +374,20 @@ Covers browsing and building a cart in [Menu.jsx](../frontend/src/Menu.jsx) with
 | [the header cart button moves focus to the cart](../frontend/src/Menu.cart.test.jsx#L265) | The header's Cart button focuses the cart heading. |
 | [the skip link moves focus to the menu](../frontend/src/Menu.cart.test.jsx#L273) | The "Skip to menu" link works for keyboard users. |
 
+### Placing an order: [place-order.test.jsx](../frontend/src/place-order.test.jsx)
+
+Covers ordering from checkout (US3) with the real Menu, Checkout, cart rules and browser storage; Supabase and `fetch` are faked.
+
+| Test | What it checks |
+|---|---|
+| [only offers Place order after a valid review](../frontend/src/place-order.test.jsx#L72) | **Place order** appears only once the server has confirmed the meal. |
+| [sends the meal with the login token and a checkout key, then clears the cart](../frontend/src/place-order.test.jsx#L86) | The request carries the token, the meal and a UUID key; afterwards "Order received" shows and the cart is empty. |
+| [retries a failed attempt with the same checkout key and keeps the cart meanwhile](../frontend/src/place-order.test.jsx#L108) | After a failed attempt the cart and its key are kept, and the retry sends the same key, so it can't create a second order. |
+| [shows the latest review when the menu changed before ordering, and keeps the cart](../frontend/src/place-order.test.jsx#L125) | A 409 re-runs the review and shows what changed; no order is shown and the cart stays. |
+| [asks the student to sign in again when the session expired](../frontend/src/place-order.test.jsx#L141) | A 401 shows **Sign in and keep cart**. |
+| [disables Place order while the order is being saved](../frontend/src/place-order.test.jsx#L151) | The button reads "Placing order…" and can't be clicked twice. |
+| [the confirmation can be dismissed](../frontend/src/place-order.test.jsx#L163) | The "Order received" panel closes with **Dismiss**. |
+
 ### Page switching: [App.test.jsx](../frontend/src/App.test.jsx)
 
 Covers [App.jsx](../frontend/src/App.jsx), which switches between the login page and the menu using the address (`#menu` / `#login`). The menu stays loaded in the background so the cart survives a trip to the login page.
@@ -385,11 +438,11 @@ Location: [frontend/e2e/](../frontend/e2e/). Run with `npm run test:e2e` from `f
 | [an incomplete meal cannot be validated and says what is missing](../frontend/e2e/checkout.spec.js#L29) | An Entry alone shows which parts are missing, and Validate is disabled. |
 | [a student signs in and lands on the menu](../frontend/e2e/sign-in.spec.js#L8) | A real sign-in through Supabase and the backend opens the menu with "Signed in as …". |
 | [a signed-in student builds a meal from the database menu and the server validates it](../frontend/e2e/full-stack.spec.js#L10) | The whole stack with nothing faked: sign in → the 22 menu items load from the database → build a meal → the server confirms it's valid. |
+| [a signed-in student places an order and it is saved](../frontend/e2e/full-stack.spec.js#L28) | Sign in → build a meal → validate → **Place order** → "Order received" with the items → the cart is empty, also after a reload. |
 
 ## Not covered yet
 
-- **Writing to the database through the API:** order placement (US3) isn't built yet. When it lands, add an integration test that places an order and reads the stored row back.
-- **The kitchen view:** not built yet.
+- **Order confirmation, staff status updates and pickup tracking (US4–US6):** not built yet. They build on `GET /orders/{id}` and the `status` column.
 - **The "Sign in with SSO" button,** which has no behavior yet.
 - **A network failure when calling `/api/me`.** The page currently shows the browser's raw error text (e.g. "Failed to fetch").
 

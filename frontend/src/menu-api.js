@@ -13,21 +13,48 @@ export async function loadMenu(signal) {
   return items;
 }
 
-export async function reviewCart(cart, catalog) {
+async function accessToken() {
   const supabase = getSupabase();
   const { data, error } = supabase ? await supabase.auth.getSession() : { data: null };
-  if (error || !data?.session?.access_token) return { signInRequired: true };
-  const response = await fetch('/api/checkout/review', {
+  return error ? null : data?.session?.access_token || null;
+}
+
+function cartItems(cart, catalog) {
+  return Object.entries(cart.items).map(([id, quantity]) => ({ id, quantity,
+    expectedSwipeType: cart.reviewedTypes?.[id] || catalog.find((item) => item.id === id)?.swipeType,
+  }));
+}
+
+function postJson(url, token, body) {
+  return fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
-    body: JSON.stringify({
-      swipes: cart.swipes,
-      items: Object.entries(cart.items).map(([id, quantity]) => ({ id, quantity,
-        expectedSwipeType: cart.reviewedTypes?.[id] || catalog.find((item) => item.id === id)?.swipeType,
-      })),
-    }),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
   });
+}
+
+export async function reviewCart(cart, catalog) {
+  const token = await accessToken();
+  if (!token) return { signInRequired: true };
+  const response = await postJson('/api/checkout/review', token, { swipes: cart.swipes, items: cartItems(cart, catalog) });
   if (response.status === 401) return { signInRequired: true };
   if (!response.ok) throw new Error(response.status === 422 ? 'The cart is invalid. Check quantities and try again.' : 'Could not check the latest menu. Your cart is still here; please try again.');
   return response.json();
+}
+
+// Returns { order }, { issues, message } when the meal needs review, or { signInRequired }.
+// The cart's checkoutKey makes retries safe: the server returns the same order for it.
+export async function placeOrder(cart, catalog) {
+  const token = await accessToken();
+  if (!token) return { signInRequired: true };
+  const response = await postJson('/api/orders', token, {
+    swipes: cart.swipes, idempotencyKey: cart.checkoutKey, items: cartItems(cart, catalog),
+  });
+  if (response.status === 401) return { signInRequired: true };
+  if (response.status === 409) {
+    const body = await response.json().catch(() => ({}));
+    return { issues: body.detail?.issues ?? [], message: body.detail?.message || 'Your meal needs review before ordering.' };
+  }
+  if (!response.ok) throw new Error('Could not place your order. Your cart is still here; please try again.');
+  return { order: await response.json() };
 }

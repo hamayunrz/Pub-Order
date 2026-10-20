@@ -4,6 +4,19 @@ export const SWIPE_TYPES = ['Entry', 'Side', 'Drink'];
 export const emptyCart = () => ({ swipes: 1, items: {}, reviewedTypes: {} });
 const record = (value) => value && typeof value === 'object' && !Array.isArray(value);
 const validQuantity = (value) => Number.isInteger(value) && value >= 1 && value <= MAX_SWIPES;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// A checkout key identifies one order attempt, so retrying a failed submission can't
+// create a duplicate order. Any change to the cart makes it a new order with a new key.
+export function withCheckoutKey(cart) {
+  return cart.checkoutKey ? cart : { ...cart, checkoutKey: crypto.randomUUID() };
+}
+
+function changed(cart) {
+  const next = { ...cart };
+  delete next.checkoutKey;
+  return next;
+}
 
 // Restore before the asynchronous catalog arrives. Keep removed IDs so users can
 // see and remove them instead of silently losing part of their intended order.
@@ -17,6 +30,7 @@ export function restoreCart(serialized) {
       swipes: value.swipes,
       items: Object.fromEntries(entries),
       reviewedTypes: Object.fromEntries(entries.filter(([id]) => SWIPE_TYPES.includes(value.reviewedTypes?.[id])).map(([id]) => [id, value.reviewedTypes[id]])),
+      ...(typeof value.checkoutKey === 'string' && UUID.test(value.checkoutKey) ? { checkoutKey: value.checkoutKey } : {}),
     };
   } catch { return emptyCart(); }
 }
@@ -33,7 +47,7 @@ function countsByType(items, catalog) {
 export function setSwipes(cart, swipes, catalog) {
   if (!validQuantity(swipes)) return cart;
   if (Object.values(countsByType(cart.items, catalog)).some((count) => count > swipes)) return cart;
-  return { ...cart, swipes };
+  return { ...changed(cart), swipes };
 }
 
 export function setQuantity(cart, id, quantity, catalog) {
@@ -42,7 +56,7 @@ export function setQuantity(cart, id, quantity, catalog) {
   const reviewedTypes = { ...cart.reviewedTypes };
   if (quantity === 0) {
     delete items[id]; delete reviewedTypes[id];
-    return { ...cart, items, reviewedTypes };
+    return { ...changed(cart), items, reviewedTypes };
   }
   const item = catalog.find((candidate) => candidate.id === id);
   if (!item || !item.available) return cart;
@@ -51,7 +65,7 @@ export function setQuantity(cart, id, quantity, catalog) {
   items[id] = quantity;
   // Keep the originally reviewed classification until an explicit acceptance.
   reviewedTypes[id] ??= item.swipeType;
-  return { ...cart, items, reviewedTypes };
+  return { ...changed(cart), items, reviewedTypes };
 }
 
 export function getCartSummary(cart, catalog) {

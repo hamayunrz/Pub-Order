@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { MENU_ITEMS } from './menu-data.js';
-import { filterMenu, getCartSummary, MAX_SWIPES, restoreCart, setQuantity, setSwipes, checkoutErrors, emptyCart } from './cart.js';
+import { filterMenu, getCartSummary, MAX_SWIPES, restoreCart, setQuantity, setSwipes, checkoutErrors, emptyCart, withCheckoutKey } from './cart.js';
 const menu = MENU_ITEMS.map((item) => ({ ...item, available: true }));
 const meal = () => ({ swipes: 1, items: { 'pub-burger': 1, 'straight-cut-fries': 1, 'sweet-tea': 1 }, reviewedTypes: {} });
 
@@ -189,5 +189,33 @@ describe('summary, search, and review details', () => {
   test('review explains which part of the meal is short', () => {
     const cart = cartWith(2, { 'pub-burger': 2, 'straight-cut-fries': 2, 'sweet-tea': 1 });
     expect(checkoutErrors(cart, menu)).toEqual(['Choose exactly 2 drink item(s); your cart has 1.']);
+  });
+});
+
+describe('checkout key', () => {
+  const KEY = '6f1d2c34-5b6a-4e7f-8a9b-0c1d2e3f4a5b';
+
+  test('withCheckoutKey adds a UUID once and then keeps it', () => {
+    const keyed = withCheckoutKey(meal());
+    expect(keyed.checkoutKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(withCheckoutKey(keyed)).toBe(keyed);
+  });
+
+  test('a saved key survives a restore, but an invalid one is dropped', () => {
+    expect(restoreCart(JSON.stringify({ ...meal(), checkoutKey: KEY })).checkoutKey).toBe(KEY);
+    expect(restoreCart(JSON.stringify({ ...meal(), checkoutKey: 'not-a-key' }))).not.toHaveProperty('checkoutKey');
+  });
+
+  test('changing the cart drops the key, because it becomes a new order', () => {
+    const keyed = { ...cartWith(2, { 'pub-burger': 1 }), checkoutKey: KEY };
+    expect(setQuantity(keyed, 'pub-burger', 2, menu)).not.toHaveProperty('checkoutKey');
+    expect(setQuantity(keyed, 'pub-burger', 0, menu)).not.toHaveProperty('checkoutKey');
+    expect(setSwipes(keyed, 3, menu)).not.toHaveProperty('checkoutKey');
+  });
+
+  test('a rejected change keeps the key', () => {
+    const keyed = { ...cartWith(1, { 'pub-burger': 1 }), checkoutKey: KEY };
+    expect(setQuantity(keyed, 'chicken-tenders', 1, menu)).toBe(keyed);
+    expect(setSwipes(keyed, 0, menu)).toBe(keyed);
   });
 });
