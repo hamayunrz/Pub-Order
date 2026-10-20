@@ -1,5 +1,6 @@
 // US3: placing an order from checkout. Supabase and fetch are faked; Menu, Checkout, the cart
-// rules and browser storage are real.
+// rules and browser storage are real. After a save, Menu hands the order to App, which opens
+// the US4 confirmation page (covered in order-tracking.integration.test.jsx).
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,6 +29,7 @@ const validReview = () => ({ items: catalog.map((item) => ({ ...item, quantity: 
 
 let orderResponses;
 let reviewResponses;
+let onOrderPlaced;
 
 beforeEach(() => {
   localStorage.clear();
@@ -36,6 +38,7 @@ beforeEach(() => {
   } });
   orderResponses = [];
   reviewResponses = [];
+  onOrderPlaced = vi.fn();
   vi.stubGlobal('fetch', vi.fn(async (url) => {
     if (url === '/api/menu') return response(catalog);
     if (url === '/api/checkout/review') return reviewResponses.shift() ?? response(validReview());
@@ -60,7 +63,7 @@ function savedCart() {
 async function openValidatedReview() {
   localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(meal));
   const user = userEvent.setup();
-  render(<Menu />);
+  render(<Menu onOrderPlaced={onOrderPlaced} />);
   await screen.findByRole('button', { name: 'Add Burger to cart' });
   await user.click(screen.getByRole('button', { name: 'Review checkout' }));
   await user.click(screen.getByRole('button', { name: 'Validate checkout' }));
@@ -88,8 +91,7 @@ describe('Placing an order', () => {
 
     await user.click(screen.getByRole('button', { name: 'Place order' }));
 
-    expect(await screen.findByRole('heading', { name: 'Order received' })).toBeInTheDocument();
-    expect(screen.getByText('#0a1b2c3d')).toBeInTheDocument();
+    await vi.waitFor(() => expect(onOrderPlaced).toHaveBeenCalledWith(order));
     const [[, request]] = orderCalls();
     const body = JSON.parse(request.body);
     expect(request.headers.Authorization).toBe('Bearer test-token');
@@ -118,7 +120,7 @@ describe('Placing an order', () => {
 
     await user.click(screen.getByRole('button', { name: 'Place order' }));
 
-    expect(await screen.findByRole('heading', { name: 'Order received' })).toBeInTheDocument();
+    await vi.waitFor(() => expect(onOrderPlaced).toHaveBeenCalledWith(order));
     expect(JSON.parse(orderCalls()[1][1].body).idempotencyKey).toBe(firstKey);
   });
 
@@ -134,7 +136,7 @@ describe('Placing an order', () => {
 
     expect(await screen.findByText('Tea is unavailable. Remove it before continuing.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Place order' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Order received' })).not.toBeInTheDocument();
+    expect(onOrderPlaced).not.toHaveBeenCalled();
     expect(savedCart().items).toEqual(meal.items);
   });
 
@@ -157,17 +159,17 @@ describe('Placing an order', () => {
 
     expect(screen.getByRole('button', { name: 'Placing order…' })).toBeDisabled();
     finish(response(order, 201));
-    expect(await screen.findByRole('heading', { name: 'Order received' })).toBeInTheDocument();
+    await vi.waitFor(() => expect(onOrderPlaced).toHaveBeenCalledWith(order));
   });
 
-  it('the confirmation can be dismissed', async () => {
+  it('opens no confirmation when the order was not saved', async () => {
+    orderResponses.push(response({ detail: 'Could not save your order.' }, 503));
     const user = await openValidatedReview();
+
     await user.click(screen.getByRole('button', { name: 'Place order' }));
-    await screen.findByRole('heading', { name: 'Order received' });
 
-    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
-
-    expect(screen.queryByRole('heading', { name: 'Order received' })).not.toBeInTheDocument();
+    expect(await screen.findByText(/Could not place your order/)).toBeInTheDocument();
+    expect(onOrderPlaced).not.toHaveBeenCalled();
   });
 });
 
@@ -180,7 +182,7 @@ it('acknowledges a saved order after Back to cart unmounts checkout', async () =
   await user.click(screen.getByRole('button', { name: 'Back to cart' }));
   await act(async () => { finish(response(order, 201)); });
   expect(savedCart().items).toEqual({});
-  expect(screen.getByRole('heading', { name: 'Order received' })).toBeInTheDocument();
+  expect(onOrderPlaced).toHaveBeenCalledWith(order);
 });
 
 it('keeps a newly edited cart when an earlier order finishes saving', async () => {
@@ -193,5 +195,5 @@ it('keeps a newly edited cart when an earlier order finishes saving', async () =
   await user.click(screen.getByRole('button', { name: 'Add Burger to cart' }));
   await act(async () => { finish(response(order, 201)); });
   expect(savedCart().items).toEqual({ burger: 1 });
-  expect(screen.getByRole('heading', { name: 'Order received' })).toBeInTheDocument();
+  expect(onOrderPlaced).toHaveBeenCalledWith(order);
 });
