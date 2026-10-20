@@ -28,15 +28,16 @@ def test_non_bearer_scheme_returns_401(client, fake_auth):
     assert fake_auth.tokens == []
 
 
-def test_valid_token_returns_user(client, fake_auth):
+def test_valid_token_returns_user(client, fake_auth, monkeypatch):
     fake_auth.result = SimpleNamespace(
         user=SimpleNamespace(id="user-123", email="student@vanderbilt.edu"),
     )
+    monkeypatch.setattr("app.main.fetch_role", lambda token, user_id: "student")
 
     response = client.get("/me", headers=bearer("abc.def.ghi"))
 
     assert response.status_code == 200
-    assert response.json() == {"id": "user-123", "email": "student@vanderbilt.edu"}
+    assert response.json() == {"id": "user-123", "email": "student@vanderbilt.edu", "role": "student"}
     assert fake_auth.tokens == ["abc.def.ghi"]
 
 
@@ -72,6 +73,16 @@ def test_response_without_user_returns_401(client, fake_auth):
     response = client.get("/me", headers=bearer())
 
     assert response.status_code == 401
+
+
+def test_id_is_a_string(client, fake_auth, monkeypatch):
+    fake_auth.result = SimpleNamespace(user=SimpleNamespace(id=42, email="student@vanderbilt.edu"))
+    monkeypatch.setattr("app.main.fetch_role", lambda token, user_id: "kitchen")
+
+    response = client.get("/me", headers=bearer())
+
+    assert response.json()["id"] == "42"
+    assert response.json()["role"] == "kitchen"
 
 
 def test_unconfigured_supabase_returns_503(client, monkeypatch):

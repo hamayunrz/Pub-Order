@@ -1,6 +1,6 @@
 // Unit tests for reading saved orders from the API (US4, US6). Supabase and fetch are faked.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { loadOrder, loadOrders } from './order-api.js';
+import { loadOrder, loadOrders, updateOrderStatus } from './order-api.js';
 import { getSupabase } from './supabase.js';
 
 vi.mock('./supabase.js', () => ({ getSupabase: vi.fn() }));
@@ -93,5 +93,26 @@ describe('loadOrders', () => {
     await expect(loadOrders()).rejects.toThrow('Could not load your orders. Please try again.');
     fetch.mockResolvedValueOnce(response([{ id: 'nope' }]));
     await expect(loadOrders()).rejects.toThrow('Could not load your orders');
+  });
+});
+
+describe('updateOrderStatus', () => {
+  it('sends the new status with the login token', async () => {
+    fetch.mockResolvedValueOnce(response({ ...order, status: 'Ready' }));
+
+    await expect(updateOrderStatus(ID, 'Ready')).resolves.toEqual({ order: { ...order, status: 'Ready' } });
+
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe(`/api/orders/${ID}`);
+    expect(options.method).toBe('PATCH');
+    expect(options.headers.Authorization).toBe('Bearer test-token');
+    expect(JSON.parse(options.body)).toEqual({ status: 'Ready' });
+  });
+
+  it('reports a student account or a missing order without throwing', async () => {
+    fetch.mockResolvedValueOnce(response({ detail: 'Kitchen access required.' }, 403));
+    await expect(updateOrderStatus(ID, 'Ready')).resolves.toEqual({ forbidden: true });
+    fetch.mockResolvedValueOnce(response({ detail: 'Order not found.' }, 404));
+    await expect(updateOrderStatus(ID, 'Ready')).resolves.toEqual({ notFound: true });
   });
 });

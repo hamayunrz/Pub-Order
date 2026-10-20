@@ -77,6 +77,8 @@
 .order-row-ready { border-color: var(--ink); box-shadow: inset 4px 0 0 var(--gold); }
 .order-row-ready .order-chip { background: var(--ink); color: #f3d48e; }
 .order-row-collected .order-chip { background: transparent; border: 1px solid var(--line); color: var(--muted); }
+.kitchen-status { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.kitchen-status .menu-add[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 
 @media (max-width: 800px) {
   .order-layout { grid-template-columns: 1fr; }

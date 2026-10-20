@@ -291,7 +291,7 @@ describe('Callbacks to the app', () => {
     await user.click(submitButton());
 
     await screen.findByRole('status');
-    expect(onSignedIn).toHaveBeenCalledExactlyOnceWith('student@vanderbilt.edu');
+    expect(onSignedIn).toHaveBeenCalledExactlyOnceWith({ email: 'student@vanderbilt.edu', role: 'student' });
   });
 
   it('reports the signed-in email after a sign-up that returns a session', async () => {
@@ -304,7 +304,7 @@ describe('Callbacks to the app', () => {
     await user.click(submitButton('Create account'));
 
     await screen.findByRole('status');
-    expect(onSignedIn).toHaveBeenCalledExactlyOnceWith('student@vanderbilt.edu');
+    expect(onSignedIn).toHaveBeenCalledExactlyOnceWith({ email: 'student@vanderbilt.edu', role: 'student' });
   });
 
   it('does not report a sign-in that Supabase rejects', async () => {

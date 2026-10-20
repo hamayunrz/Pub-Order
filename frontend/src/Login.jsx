@@ -57,7 +57,7 @@ async function confirmSession(session) {
     throw new Error(body.detail || 'The server could not confirm this sign-in.');
   }
   const profile = await response.json();
-  return profile.email;
+  return { email: profile.email, role: profile.role === 'kitchen' ? 'kitchen' : 'student' };
 }
 
 export default function Login({ onBrowse, onSignedIn } = {}) {
@@ -118,9 +118,9 @@ export default function Login({ onBrowse, onSignedIn } = {}) {
           setNotice('Account created. Sign in to continue.');
           return;
         }
-        const signedInEmail = await confirmSession(data.session);
-        setNotice(`Signed in as ${signedInEmail}.`);
-        onSignedIn?.(signedInEmail);
+        const account = await confirmSession(data.session);
+        setNotice(`Signed in as ${account.email}.`);
+        onSignedIn?.(account);
         return;
       }
 
@@ -133,9 +133,9 @@ export default function Login({ onBrowse, onSignedIn } = {}) {
         return;
       }
 
-      const signedInEmail = await confirmSession(data.session);
-      setNotice(`Signed in as ${signedInEmail}.`);
-      onSignedIn?.(signedInEmail);
+      const account = await confirmSession(data.session);
+      setNotice(`Signed in as ${account.email}.`);
+      onSignedIn?.(account);
     } catch (error) {
       setFormError(
         error instanceof Error && error.message
